@@ -1,0 +1,96 @@
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-coach-java-app
+
+  # ===================================================================
+  # DATABASE (POSTGRESQL)
+  # ===================================================================
+  datasource:
+    # 在 Docker 环境中，`postgres` 是 PostgreSQL 服务的容器名
+    url: jdbc:postgresql://postgres:5432/ai_coach
+    # 这些值将在 docker-compose.yml 中通过环境变量覆盖
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      # `update` 会在启动时根据实体类更新表结构，适合开发环境
+      # 在生产环境中，建议使用 `validate` 并配合 Flyway/Liquibase 进行迁移
+      ddl-auto: update
+    # 在控制台打印执行的 SQL，便于调试
+    show-sql: true
+
+  # ===================================================================
+  # CACHE (REDIS)
+  # ===================================================================
+  cache:
+    type: redis
+  redis:
+    # 在 Docker 环境中，`redis` 是 Redis 服务的容器名
+    host: redis
+    port: 6379
+
+  # ===================================================================
+  # SPRING AI (for DeepSeek)
+  # ===================================================================
+  ai:
+    openai:
+      # 通过环境变量注入，如果未提供，则使用默认值
+      base-url: ${DEEPSEEK_API_BASE:https://api.deepseek.com/v1}
+      api-key: ${DEEPSEEK_API_KEY:your_deepseek_api_key}
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.7 # 为了一些创造性任务，设置一个非零的温度
+
+# ===================================================================
+# FEIGN CLIENT
+# ===================================================================
+feign:
+  client:
+    config:
+      # 默认的 Feign 客户端配置
+      default:
+        connectTimeout: 5000  # 5秒连接超时
+        readTimeout: 15000    # 15秒读取超时
+  # 为 Feign 启用熔断器
+  circuitbreaker:
+    enabled: true
+
+# ===================================================================
+# AI SERVICE CONFIG
+# ===================================================================
+# Python AI 服务的地址
+ai-service:
+  url: http://ai-service:8000/api
+
+# ===================================================================
+# RESILIENCE4J CIRCUIT BREAKER
+# ===================================================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      # 定义一个名为 `ai-service` 的熔断器实例
+      ai-service:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10 # 最近10次调用
+        minimum-number-of-calls: 5 # 至少5次调用才开始计算失败率
+        permitted-number-of-calls-in-half-open-state: 3 # 半开状态下允许3次调用
+        automatic-transition-from-open-to-half-open-enabled: true
+        wait-duration-in-open-state: 10s # 断路器打开后，等待10秒进入半开状态
+        failure-rate-threshold: 50 # 失败率达到50%时打开断路器
+        event-consumer-buffer-size: 10
+
+# ===================================================================
+# API DOCUMENTATION (SPRINGDOC)
+# ===================================================================
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

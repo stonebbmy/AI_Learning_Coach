@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+langchain
+langchain-community
+langchain-openai
+chromadb
+tiktoken
+rank_bm25
+python-dotenv
+sse-starlette

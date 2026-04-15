@@ -1,0 +1,115 @@
+
+version: '3.8'
+
+services:
+  # ---------------- PostgreSQL Database ----------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: aicoach_postgres
+    environment:
+      POSTGRES_DB: ai_coach
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d ai_coach"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------- Redis Cache ----------------
+  redis:
+    image: redis:7-alpine
+    container_name: aicoach_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------- Chroma Vector Database ----------------
+  chroma:
+    image: chromadb/chroma:0.4.24 # 使用一个具体的版本以保证稳定性
+    container_name: aicoach_chroma
+    ports:
+      - "8001:8000" # 将Chroma的8000端口映射到主机的8001，避免与ai-service冲突
+    volumes:
+      - ./ai-service/chroma_db:/chroma/.chroma/index # 将持久化目录挂载到容器中
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------- Python AI Service ----------------
+  ai-service:
+    build:
+      context: ./ai-service
+    container_name: aicoach_ai_service
+    depends_on:
+      chroma:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      # 从项目根目录的 .env 文件中读取 DEEPSEEK_API_KEY
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ---------------- Java Business Service ----------------
+  java-app:
+    build:
+      context: ./java-app
+    container_name: aicoach_java_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # 覆盖 application.yml 中的配置，使其在 Docker 网络中正常工作
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ai_coach
+      - SPRING_DATASOURCE_USERNAME=user
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_REDIS_HOST=redis
+      - AI_SERVICE_URL=http://ai-service:8000/api
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    networks:
+      - ai-coach-net
+    healthcheck:
+      # Spring Boot Actuator 的健康检查端点
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+
+# ---------------- Network Definition ----------------
+networks:
+  ai-coach-net:
+    driver: bridge
+
+# ---------------- Volume Definition ----------------
+volumes:
+  postgres_data:
+    driver: local
