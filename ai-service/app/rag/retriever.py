@@ -1,10 +1,21 @@
 
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
-from langchain.schema import Document
+from typing import List
+
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 from .vector_store import get_vector_store
 
 
-def get_retriever_from_store() -> EnsembleRetriever:
+class _EmptyRetriever(BaseRetriever):
+    """当知识库为空时的安全检索器：始终返回空结果。"""
+
+    def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
+        return []
+
+
+def get_retriever_from_store() -> BaseRetriever:
     """
     从持久化的向量数据库中创建并返回一个混合检索器 (EnsembleRetriever)。
     该检索器用于实时问答，会从整个知识库中进行检索。
@@ -21,9 +32,9 @@ def get_retriever_from_store() -> EnsembleRetriever:
     existing_docs = vector_store.get(include=["metadatas", "documents"])
     
     if not existing_docs or not existing_docs.get('ids'):
-        print("Vector store is empty. Returning a base vector retriever.")
-        # 如果数据库为空，返回一个基础的向量检索器以避免错误
-        return vector_store.as_retriever(search_kwargs={"k": 1})
+        print("Vector store is empty. Returning an empty retriever.")
+        # 如果数据库为空，避免走 embedding（某些 provider 可能不支持 embedding 或配置不完整）
+        return _EmptyRetriever()
 
     # 将从 ChromaDB 取出的原始数据重新构建为 LangChain 的 Document 对象
     reconstructed_docs = [

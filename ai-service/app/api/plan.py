@@ -2,7 +2,7 @@
 import json
 from fastapi import APIRouter, HTTPException
 from ..models.schemas import DailyPlanRequest, DailyPlanResponse
-from ..agents.planner import get_planner_agent_executor
+from ..graphs.planner_graph import get_planner_graph
 
 router = APIRouter()
 
@@ -18,29 +18,20 @@ async def generate_daily_plan(request: DailyPlanRequest):
     """
     try:
         print(f"Generating daily plan for goal: '{request.goal}'")
-        agent_executor = get_planner_agent_executor()
-        
-        # 异步调用 Agent
-        result = await agent_executor.ainvoke({
-            "goal": request.goal
-        })
-        
-        # Agent 的最终答案通常在 'output' 字段中
-        output_str = result.get("output")
-        if not output_str:
-            raise HTTPException(status_code=500, detail="Agent 未能生成有效的计划。")
+        graph = get_planner_graph()
 
-        print(f"Agent raw output:\n{output_str}")
+        # 运行 LangGraph 工作流
+        final_state = await graph.ainvoke({"goal": request.goal})
+        plan_data = final_state.get("plan")
 
-        # Agent 的输出是一个 JSON 字符串，需要解析
-        plan_data = json.loads(output_str)
-        
-        # 使用 Pydantic 模型进行验证和转换，然后返回
+        if not plan_data:
+            raw = final_state.get("plan_raw")
+            err = final_state.get("validation_error")
+            print(f"[Error] Planner graph failed. raw={raw}\nerror={err}")
+            raise HTTPException(status_code=500, detail="Planner 未能生成有效的计划。")
+
         return DailyPlanResponse(**plan_data)
         
-    except json.JSONDecodeError:
-        print(f"[Error] Agent returned a non-JSON output: {output_str}")
-        raise HTTPException(status_code=500, detail="Agent 返回的计划格式无效。")
     except Exception as e:
         print(f"[Error] Failed to generate daily plan: {e}")
         raise HTTPException(status_code=500, detail="生成每日计划时发生内部错误。")

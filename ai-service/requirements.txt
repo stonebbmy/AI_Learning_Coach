@@ -1,11 +1,20 @@
 fastapi
 uvicorn[standard]
 pydantic
-langchain
-langchain-community
-langchain-openai
-chromadb
+# 当前代码使用的是 LangChain 0.2.x 的模块路径（langchain.prompts / langchain.schema / langchain.agents 等）
+langchain>=0.2,<0.3
+langchain-community>=0.2,<0.3
+langchain-openai>=0.1,<0.2
+# 与 docker-compose 中的 chroma 镜像版本对齐，避免 sqlite 版本不兼容
+chromadb==0.4.24
+# Debian bullseye 自带 sqlite3 版本偏低；使用 pysqlite3 提供更新的 sqlite3 运行时
+pysqlite3-binary
 tiktoken
 rank_bm25
 python-dotenv
 sse-starlette
+python-multipart
+langgraph>=0.2,<0.3
+mcp>=1.0
+httpx
+beautifulsoup4

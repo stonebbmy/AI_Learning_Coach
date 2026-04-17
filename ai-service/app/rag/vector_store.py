@@ -1,3 +1,12 @@
+import sys
+
+# Chroma 依赖 sqlite3 >= 3.35，但 Debian bullseye 的系统 sqlite3 偏旧。
+# 优先使用 pysqlite3-binary 提供的新版 sqlite3 实现来满足运行时要求。
+try:
+    import pysqlite3  # type: ignore
+    sys.modules["sqlite3"] = pysqlite3
+except Exception:
+    pass
 
 import chromadb
 from langchain_community.vectorstores import Chroma
@@ -20,15 +29,20 @@ def get_vector_store() -> Chroma:
     """
     global _vector_store
     if _vector_store is None:
-        # 使用持久化客户端，数据将保存在指定的路径
-        persistent_client = chromadb.PersistentClient(path=settings.CHROMA_DB_PATH)
-        
+        # 统一 Chroma 拓扑：默认连接 docker-compose 的 chroma server
+        if settings.CHROMA_MODE.lower() == "remote":
+            client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+            mode_desc = f"remote({settings.CHROMA_HOST}:{settings.CHROMA_PORT})"
+        else:
+            client = chromadb.PersistentClient(path=settings.CHROMA_DB_PATH)
+            mode_desc = f"embedded({settings.CHROMA_DB_PATH})"
+
         _vector_store = Chroma(
-            client=persistent_client,
+            client=client,
             collection_name=settings.CHROMA_COLLECTION_NAME,
             embedding_function=embeddings,
         )
-        print(f"Chroma vector store initialized at {settings.CHROMA_DB_PATH}")
+        print(f"Chroma vector store initialized: {mode_desc}")
     return _vector_store
 
 def add_documents_to_store(documents: List[Document]):

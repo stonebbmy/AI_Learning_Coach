@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from app.api import outline, plan, chat, knowledge
 from app.rag.vector_store import get_vector_store
 from app.core.config import settings
+from app.core.trace import new_request_id, set_request_id
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,6 +31,15 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Simple request-id middleware for traceable logs (no external deps).
+@app.middleware("http")
+async def request_id_middleware(request, call_next):
+    rid = request.headers.get("x-request-id") or new_request_id()
+    set_request_id(rid)
+    response = await call_next(request)
+    response.headers["x-request-id"] = rid
+    return response
 
 # 包含各个模块的 API 路由
 app.include_router(outline.router, prefix="/api", tags=["1. Learning Outline"])

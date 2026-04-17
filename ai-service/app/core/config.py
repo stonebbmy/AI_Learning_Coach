@@ -34,8 +34,17 @@ class Settings:
     # --------------------------------------------------------------------------
     # 向量数据库（ChromaDB）配置
     # --------------------------------------------------------------------------
-    # ChromaDB 持久化路径
-    CHROMA_DB_PATH: str = "./chroma_db"
+    # Chroma 运行模式：
+    # - remote: 连接 docker-compose 中的 chroma server（推荐，避免多 worker 本地 sqlite 依赖与一致性问题）
+    # - embedded: 使用本地 PersistentClient（仅用于本地快速试验）
+    CHROMA_MODE: str = os.getenv("CHROMA_MODE", "remote")
+
+    # remote 模式配置（docker-compose 网络内：host=chroma, port=8000）
+    CHROMA_HOST: str = os.getenv("CHROMA_HOST", "chroma")
+    CHROMA_PORT: int = int(os.getenv("CHROMA_PORT", "8000"))
+
+    # embedded 模式持久化路径
+    CHROMA_DB_PATH: str = os.getenv("CHROMA_DB_PATH", "./chroma_db")
     
     # 集合（Collection）名称，用于存储笔记向量
     CHROMA_COLLECTION_NAME: str = "ai_learning_notes"

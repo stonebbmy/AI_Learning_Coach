@@ -26,7 +26,7 @@ def search_my_notes(query: str) -> str:
         retriever = get_retriever_from_store()
         
         # 使用检索器获取相关文档
-        retrieved_docs: List[Document] = retriever.get_relevant_documents(query)
+        retrieved_docs: List[Document] = retriever.invoke(query)
         
         if not retrieved_docs:
             return "在你的笔记中没有找到关于 '" + query + "' 的信息。"

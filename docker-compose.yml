@@ -1,4 +1,5 @@
 
+
 services:
   # ---------------- PostgreSQL Database ----------------
   postgres:
@@ -45,7 +46,8 @@ services:
     networks:
       - ai-coach-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      # chroma 镜像不自带 curl/wget，使用 python 内置 urllib 做探活
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat', timeout=2).read()"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -54,6 +56,11 @@ services:
   ai-service:
     build:
       context: ./ai-service
+      args:
+        - HTTP_PROXY=http://host.docker.internal:7890
+        - HTTPS_PROXY=http://host.docker.internal:7890
+        - PIP_INDEX_URL=http://pypi.tuna.tsinghua.edu.cn/simple
+        - PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
     container_name: aicoach_ai_service
     depends_on:
       chroma:
@@ -62,11 +69,23 @@ services:
       - "8000:8000"
     environment:
       # 从项目根目录的 .env 文件中读取 DEEPSEEK_API_KEY
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_API_KEY=sk-fd7c46b7e28b415d8dae2b8876f57402
+      # Chroma 拓扑：统一走 remote server（docker compose 中的 chroma 服务）
+      - CHROMA_MODE=remote
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+      # 运行时禁用代理（避免容器内指向 127.0.0.1:7890 的无效代理导致依赖下载失败）
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - http_proxy=
+      - https_proxy=
+      - NO_PROXY=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com
+      - no_proxy=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com
     networks:
       - ai-coach-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # ai-service 镜像也未必安装 curl，直接用 python 探活
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -75,6 +94,9 @@ services:
   java-app:
     build:
       context: ./java-app
+      args:
+        - HTTP_PROXY=http://host.docker.internal:7890
+        - HTTPS_PROXY=http://host.docker.internal:7890
     container_name: aicoach_java_app
     depends_on:
       postgres:
@@ -90,9 +112,9 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ai_coach
       - SPRING_DATASOURCE_USERNAME=user
       - SPRING_DATASOURCE_PASSWORD=password
-      - SPRING_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_HOST=redis
       - AI_SERVICE_URL=http://ai-service:8000/api
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_API_KEY=sk-fd7c46b7e28b415d8dae2b8876f57402
     networks:
       - ai-coach-net
     healthcheck:
