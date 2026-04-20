@@ -16,34 +16,52 @@ from langchain.schema.document import Document
 from ..core.config import settings
 from ..core.llm import embeddings
 
-_vector_store = None
+_chroma_client = None
+_chroma_stores: dict[str, Chroma] = {}
+
+
+def get_chroma_client():
+    """单一 Chroma 客户端（remote 或 embedded），供多个 collection 复用。"""
+    global _chroma_client
+    if _chroma_client is None:
+        if settings.CHROMA_MODE.lower() == "remote":
+            _chroma_client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+            mode_desc = f"remote({settings.CHROMA_HOST}:{settings.CHROMA_PORT})"
+        else:
+            _chroma_client = chromadb.PersistentClient(path=settings.CHROMA_DB_PATH)
+            mode_desc = f"embedded({settings.CHROMA_DB_PATH})"
+        print(f"Chroma client initialized: {mode_desc}")
+    return _chroma_client
+
+
+def get_chroma_collection(collection_name: str) -> Chroma:
+    """按集合名获取 LangChain Chroma 封装（多 collection 单例）。"""
+    if collection_name not in _chroma_stores:
+        _chroma_stores[collection_name] = Chroma(
+            client=get_chroma_client(),
+            collection_name=collection_name,
+            embedding_function=embeddings,
+        )
+        print(f"Chroma collection ready: {collection_name}")
+    return _chroma_stores[collection_name]
+
 
 def get_vector_store() -> Chroma:
     """
-    获取或创建一个全局的 Chroma 向量数据库实例 (单例模式)。
-    
-    使用持久化客户端，确保数据在服务重启后依然存在。
-
-    Returns:
-        Chroma: 向量数据库实例。
+    获取笔记知识库向量集合（默认 ai_learning_notes）。
     """
-    global _vector_store
-    if _vector_store is None:
-        # 统一 Chroma 拓扑：默认连接 docker-compose 的 chroma server
-        if settings.CHROMA_MODE.lower() == "remote":
-            client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
-            mode_desc = f"remote({settings.CHROMA_HOST}:{settings.CHROMA_PORT})"
-        else:
-            client = chromadb.PersistentClient(path=settings.CHROMA_DB_PATH)
-            mode_desc = f"embedded({settings.CHROMA_DB_PATH})"
+    return get_chroma_collection(settings.CHROMA_COLLECTION_NAME)
 
-        _vector_store = Chroma(
-            client=client,
-            collection_name=settings.CHROMA_COLLECTION_NAME,
-            embedding_function=embeddings,
-        )
-        print(f"Chroma vector store initialized: {mode_desc}")
-    return _vector_store
+
+def get_semantic_cache_store() -> Chroma:
+    """语义相似问答缓存（与笔记库隔离的 collection）。"""
+    return get_chroma_collection(settings.SEMANTIC_CACHE_COLLECTION)
+
+
+def get_session_memory_store() -> Chroma:
+    """长期会话记忆：按 session 元数据过滤检索历史问答片段。"""
+    return get_chroma_collection(settings.SESSION_MEMORY_COLLECTION)
+
 
 def add_documents_to_store(documents: List[Document]):
     """
@@ -59,4 +77,3 @@ def add_documents_to_store(documents: List[Document]):
         
     vector_store.add_documents(documents)
     print(f"Successfully added {len(documents)} document chunks to Chroma collection '{settings.CHROMA_COLLECTION_NAME}'.")
-

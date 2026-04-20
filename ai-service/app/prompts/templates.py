@@ -123,6 +123,8 @@ PLANNER_AGENT_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
 # ==========================================================================
 # 3. RAG 问答 (/chat) 的 Prompt
 # ==========================================================================
+# 说明：生产路径已迁移到 YAML（app/prompts/versions/qa_v1.yaml），由 PROMPT_QA_VERSION 切换版本。
+# 以下常量保留便于单测或与旧代码对照。
 
 QA_SYSTEM_PROMPT = """
 你是一个AI学习助理，专门根据提供的学习笔记内容来回答问题。

@@ -134,15 +134,19 @@ export async function streamChat(
   question: string,
   sessionId: string,
   onChunk: (text: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** 可选：显式多轮历史；不传则完全依赖后端按 sessionId 存 Redis 的短期记忆 */
+  messages?: { role: string; content: string }[]
 ): Promise<void> {
+  const body: Record<string, unknown> = { question, sessionId }
+  if (messages?.length) body.messages = messages
   const r = await fetch(`${javaBase}/api/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify({ question, sessionId }),
+    body: JSON.stringify(body),
     signal,
   })
   if (!r.ok || !r.body) {
@@ -168,6 +172,51 @@ export async function streamChat(
         const text = extractSseDataPayload(line.slice(5))
         if (text !== null && text !== '') onChunk(text)
       }
+      // sse-starlette 可能发送 event: end，无正文则跳过
+      if (line.startsWith('event:')) {
+        continue
+      }
     }
+  }
+}
+
+export interface ChatAgentResponse {
+  answer: string
+  session_id?: string
+  sessionId?: string
+  request_id?: string
+  requestId?: string
+}
+
+/**
+ * 工具调用 Agent（非流式），经 Java POST /api/chat/agent → Python /api/chat/agent
+ */
+export async function chatAgent(question: string, sessionId: string): Promise<ChatAgentResponse> {
+  const r = await fetch(`${javaBase}/api/chat/agent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, sessionId }),
+  })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+  return r.json() as Promise<ChatAgentResponse>
+}
+
+/**
+ * 多模态占位探测（直连 Python，默认返回 503）
+ */
+export async function visionProbe(imageUrl: string, question: string): Promise<unknown> {
+  const r = await fetch(`${aiBase}/chat/vision-probe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_url: imageUrl, question }),
+  })
+  const text = await r.text()
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return { raw: text, status: r.status }
   }
 }

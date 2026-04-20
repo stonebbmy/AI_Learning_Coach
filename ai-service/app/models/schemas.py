@@ -56,10 +56,23 @@ class DailyPlanResponse(BaseModel):
 # /chat - RAG 问答
 # ==========================================================================
 
+class ChatMessage(BaseModel):
+    """单条对话消息（短期记忆由服务端 Redis 与会话 ID 维护；也可由客户端显式传入）。"""
+    role: str = Field(..., description="user 或 assistant")
+    content: str = Field(..., description="消息正文")
+
+
 class ChatRequest(BaseModel):
     """问答请求体"""
     question: str = Field(..., description="用户提出的问题")
     session_id: str = Field("default_session", description="会话ID，用于跟踪对话历史")
+    messages: List[ChatMessage] = Field(default_factory=list, description="可选：客户端携带的近期多轮消息")
+
+
+class ChatAgentRequest(BaseModel):
+    """工具调用 Agent 问答（非流式）"""
+    question: str = Field(..., description="用户问题")
+    session_id: str = Field("default_session", description="会话 ID（日志关联）")
 
 # ChatResponse 不是一个 Pydantic 模型, 因为它是一个流式响应。
 # 数据将通过服务器发送事件 (Server-Sent Events) 发送。

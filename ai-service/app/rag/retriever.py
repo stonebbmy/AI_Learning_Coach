@@ -15,14 +15,18 @@ class _EmptyRetriever(BaseRetriever):
         return []
 
 
-def get_retriever_from_store() -> BaseRetriever:
+def get_retriever_from_store(*, candidate_k: int | None = None) -> BaseRetriever:
     """
     从持久化的向量数据库中创建并返回一个混合检索器 (EnsembleRetriever)。
-    该检索器用于实时问答，会从整个知识库中进行检索。
+    candidate_k：单路召回条数；两路合并后供后续 Embedding 重排序（见 app/rag/rerank.py）。
 
     Returns:
         EnsembleRetriever: 结合了 BM25 和向量检索的混合检索器。
     """
+    from ..core.config import settings
+
+    k = candidate_k if candidate_k is not None else max(3, settings.RETRIEVAL_CANDIDATES // 2)
+
     print("Initializing retriever from existing vector store...")
     vector_store = get_vector_store()
 
@@ -45,10 +49,10 @@ def get_retriever_from_store() -> BaseRetriever:
 
     # 2. 初始化 BM25 检索器 (关键字检索)
     bm25_retriever = BM25Retriever.from_documents(reconstructed_docs)
-    bm25_retriever.k = 3 # 设置返回最相关的3个结果
+    bm25_retriever.k = k
 
     # 3. 初始化向量存储检索器 (语义检索)
-    vector_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+    vector_retriever = vector_store.as_retriever(search_kwargs={"k": k})
 
     # 4. 初始化混合检索器 (EnsembleRetriever)
     # 按照要求，设置权重为 向量:BM25 = 7:3

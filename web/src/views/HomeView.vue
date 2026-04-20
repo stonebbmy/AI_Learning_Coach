@@ -13,7 +13,8 @@ import { RouterLink } from 'vue-router'
       <ul>
         <li><RouterLink to="/outline">学习大纲</RouterLink>：调用 AI 生成结构化大纲，并可确认保存到数据库。</li>
         <li><RouterLink to="/knowledge">知识库</RouterLink>：上传 Markdown 笔记写入向量库。</li>
-        <li><RouterLink to="/chat">RAG 问答</RouterLink>：基于笔记上下文的流式对话（经 Java 转发 SSE）。</li>
+        <li><RouterLink to="/chat">RAG 问答</RouterLink>：基于笔记上下文的流式对话（经 Java 转发 SSE），支持多轮 transcript。</li>
+        <li><RouterLink to="/agent">工具 Agent</RouterLink>：ReAct 工具调用（时间、笔记检索），非流式 JSON。</li>
         <li><RouterLink to="/plan">每日计划</RouterLink>：按今日目标获取学习计划（缓存 + 数据库 + LangGraph）。</li>
       </ul>
     </div>

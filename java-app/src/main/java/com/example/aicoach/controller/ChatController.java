@@ -1,12 +1,15 @@
 
 package com.example.aicoach.controller;
 
+import com.example.aicoach.dto.ChatAgentResponse;
 import com.example.aicoach.dto.ChatRequest;
+import com.example.aicoach.feign.AiServiceClient;
 import com.example.aicoach.service.ChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,6 +23,7 @@ import reactor.core.publisher.Flux;
 public class ChatController {
 
     private final ChatService chatService;
+    private final AiServiceClient aiServiceClient;
 
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "流式问答接口", 
@@ -27,7 +31,13 @@ public class ChatController {
     public Flux<String> chat(@RequestBody ChatRequest request) {
         return chatService.streamChat(request);
     }
-    
+
+    @PostMapping(value = "/agent", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "工具调用 Agent（非流式）", description = "转发到 Python /api/chat/agent，演示 Function Calling / ReAct。")
+    public ResponseEntity<ChatAgentResponse> chatAgent(@RequestBody ChatRequest request) {
+        return ResponseEntity.ok(aiServiceClient.chatAgent(request));
+    }
+
     // 可以在这里再增加一个接口，用于在客户端接收完流式响应后，将完整的对话内容一次性发回保存
     // @PostMapping("/histo   ry")
     // public ResponseEntity<Void> saveHistory(@RequestBody ChatHistoryRequest request) {

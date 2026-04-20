@@ -79,6 +79,57 @@ class Settings:
     # 是否开启 Agent 的详细思考过程日志
     AGENT_VERBOSE: bool = True
 
+    # --------------------------------------------------------------------------
+    # Prompt 版本（YAML：app/prompts/versions/qa_{version}.yaml）
+    # --------------------------------------------------------------------------
+    PROMPT_QA_VERSION: str = os.getenv("PROMPT_QA_VERSION", "v1")
+
+    # --------------------------------------------------------------------------
+    # RAG：检索后 Embedding 重排序（与 Java 里对 ES 结果做 rerank 类似）
+    # --------------------------------------------------------------------------
+    RERANK_ENABLED: bool = os.getenv("RERANK_ENABLED", "true").lower() in ("1", "true", "yes")
+    RETRIEVAL_CANDIDATES: int = int(os.getenv("RETRIEVAL_CANDIDATES", "12"))
+    RERANK_TOP_N: int = int(os.getenv("RERANK_TOP_N", "4"))
+
+    # --------------------------------------------------------------------------
+    # Redis（Python 侧：会话记忆、精确命中缓存）
+    # --------------------------------------------------------------------------
+    REDIS_ENABLED: bool = os.getenv("REDIS_ENABLED", "true").lower() in ("1", "true", "yes")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    CHAT_CACHE_TTL_SECONDS: int = int(os.getenv("CHAT_CACHE_TTL_SECONDS", "3600"))
+    CHAT_SESSION_TTL_SECONDS: int = int(os.getenv("CHAT_SESSION_TTL_SECONDS", "86400"))
+    CHAT_HISTORY_MAX_TURNS: int = int(os.getenv("CHAT_HISTORY_MAX_TURNS", "10"))
+    CHAT_HISTORY_MAX_CHARS: int = int(os.getenv("CHAT_HISTORY_MAX_CHARS", "4000"))
+
+    # --------------------------------------------------------------------------
+    # 语义缓存（Chroma 独立 collection，复用同一 embedding）
+    # --------------------------------------------------------------------------
+    SEMANTIC_CACHE_ENABLED: bool = os.getenv("SEMANTIC_CACHE_ENABLED", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    SEMANTIC_CACHE_COLLECTION: str = os.getenv("SEMANTIC_CACHE_COLLECTION", "semantic_qa_cache")
+    SEMANTIC_CACHE_MAX_DISTANCE: float = float(os.getenv("SEMANTIC_CACHE_MAX_DISTANCE", "0.42"))
+
+    SESSION_MEMORY_COLLECTION: str = os.getenv("SESSION_MEMORY_COLLECTION", "session_long_memory")
+    LONG_MEMORY_ENABLED: bool = os.getenv("LONG_MEMORY_ENABLED", "false").lower() in ("1", "true", "yes")
+
+    # --------------------------------------------------------------------------
+    # Langfuse 可观测性（可选；未配置 key 时自动跳过）
+    # --------------------------------------------------------------------------
+    LANGFUSE_PUBLIC_KEY: str = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+    LANGFUSE_SECRET_KEY: str = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
+    LANGFUSE_HOST: str = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").rstrip("/")
+
+    # --------------------------------------------------------------------------
+    # 多模态（可选：仅当配置了视觉模型时使用）
+    # --------------------------------------------------------------------------
+    VISION_MODEL_NAME: str = os.getenv("VISION_MODEL_NAME", "deepseek-chat")
+    MULTIMODAL_ENABLED: bool = os.getenv("MULTIMODAL_ENABLED", "false").lower() in ("1", "true", "yes")
+
 # 创建一个全局可用的配置实例
 settings = Settings()
 

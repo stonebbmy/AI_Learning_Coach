@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import outline, plan, chat, knowledge
+from app.api import outline, plan, chat, knowledge, chat_agent, multimodal
 from app.rag.vector_store import get_vector_store
 from app.core.config import settings
 from app.core.trace import new_request_id, set_request_id
@@ -54,6 +54,8 @@ async def request_id_middleware(request, call_next):
 app.include_router(outline.router, prefix="/api", tags=["1. Learning Outline"])
 app.include_router(knowledge.router, prefix="/api", tags=["2. Knowledge Base (RAG)"])
 app.include_router(chat.router, prefix="/api", tags=["3. Chat (RAG)"])
+app.include_router(chat_agent.router, prefix="/api", tags=["3b. Chat (Tool Agent)"])
+app.include_router(multimodal.router, prefix="/api", tags=["3c. Multimodal (Optional)"])
 app.include_router(plan.router, prefix="/api", tags=["4. Daily Plan (Agent)"])
 
 @app.get("/health", tags=["_Health Check"])

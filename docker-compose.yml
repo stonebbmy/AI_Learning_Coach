@@ -64,6 +64,8 @@ services:
         - PYTHON_BASE_IMAGE=docker.m.daocloud.io/library/python:3.11.8-slim-bullseye
     container_name: aicoach_ai_service
     depends_on:
+      redis:
+        condition: service_healthy
       chroma:
         condition: service_healthy
     ports:
@@ -82,6 +84,16 @@ services:
       - CHROMA_MODE=remote
       - CHROMA_HOST=chroma
       - CHROMA_PORT=8000
+      # Python 侧：会话记忆、精确命中缓存（与 Java 共用同一 Redis 服务）
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Prompt 版本：qa_v1.yaml / qa_v2.yaml
+      - PROMPT_QA_VERSION=v1
+      # 可选：Langfuse 追踪（未配置则自动跳过）
+      # - LANGFUSE_PUBLIC_KEY=
+      # - LANGFUSE_SECRET_KEY=
+      # - LANGFUSE_HOST=https://cloud.langfuse.com
       # 运行时禁用代理（避免容器内指向 127.0.0.1:7890 的无效代理导致依赖下载失败）
       - HTTP_PROXY=
       - HTTPS_PROXY=

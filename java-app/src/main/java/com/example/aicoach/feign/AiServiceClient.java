@@ -1,6 +1,8 @@
 
 package com.example.aicoach.feign;
 
+import com.example.aicoach.dto.ChatAgentResponse;
+import com.example.aicoach.dto.ChatRequest;
 import com.example.aicoach.dto.DailyPlanRequest;
 import com.example.aicoach.dto.DailyPlanResponse;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -22,7 +24,13 @@ public interface AiServiceClient {
      */
     @PostMapping("/plan/daily")
     DailyPlanResponse getDailyPlan(@RequestBody DailyPlanRequest request);
-    
+
+    /**
+     * 非流式工具调用 Agent（与 WebClient 转发的 SSE /chat 互补）。
+     */
+    @PostMapping("/chat/agent")
+    ChatAgentResponse chatAgent(@RequestBody ChatRequest request);
+
     // 注意：/chat 接口因为是流式响应(SSE)，不适合使用标准 OpenFeign 客户端。
     // 我们将在 Service 层使用 WebClient 来处理流式调用。
 }
