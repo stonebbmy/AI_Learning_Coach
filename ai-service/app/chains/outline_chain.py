@@ -37,6 +37,9 @@ def get_outline_generation_chain():
 {few_shot_examples[0]['output']}
 --- 示例结束 ---
 """
+    # ChatPromptTemplate 将 { } 视为模板变量；系统消息内的 JSON / schema 花括号必须转义，
+    # 否则会与 few-shot、get_format_instructions() 中的内容冲突导致调用失败。
+    final_system_prompt = final_system_prompt.replace("{", "{{").replace("}", "}}")
 
     # 创建一个包含系统消息和人类消息的 Prompt 模板
     prompt = ChatPromptTemplate.from_messages([

@@ -29,7 +29,7 @@ public class ChatController {
     }
     
     // 可以在这里再增加一个接口，用于在客户端接收完流式响应后，将完整的对话内容一次性发回保存
-    // @PostMapping("/history")
+    // @PostMapping("/histo   ry")
     // public ResponseEntity<Void> saveHistory(@RequestBody ChatHistoryRequest request) {
     //     chatService.saveChatHistory(request.getSessionId(), request.getQuestion(), request.getAnswer());
     //     return ResponseEntity.ok().build();

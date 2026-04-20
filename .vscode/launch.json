@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "🐍 Attach to AI Service (Docker)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/ai-service",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": false
+        },
+        {
+            "type": "java",
+            "name": "Attach to Docker Java App",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005,
+            "projectName": "ai-coach",   // 与 pom.xml 中的 artifactId 一致
+            "sourcePaths": [
+                "${workspaceFolder}/java-app/src/main/java"
+            ]
+        }
+    ]
+}

@@ -19,6 +19,7 @@ async def generate_outline(request: OutlineGenerateRequest):
         print(f"Generating outline for target: '{request.target}'")
         # 获取预构建的链
         chain = get_outline_generation_chain()
+        print("========= NEW CODE LOADED =========")
         
         # 异步调用链
         response = await chain.ainvoke({

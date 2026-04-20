@@ -1,5 +1,6 @@
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.api import outline, plan, chat, knowledge
@@ -30,6 +31,14 @@ app = FastAPI(
     description="提供大模型调用、Agent决策、RAG检索等核心AI功能。",
     version="1.0.0",
     lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Simple request-id middleware for traceable logs (no external deps).

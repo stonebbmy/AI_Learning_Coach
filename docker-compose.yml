@@ -69,7 +69,14 @@ services:
       - "8000:8000"
     environment:
       # 从项目根目录的 .env 文件中读取 DEEPSEEK_API_KEY
-      - DEEPSEEK_API_KEY=sk-fd7c46b7e28b415d8dae2b8876f57402
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      # 嵌入：硅基流动 + bge-m3（需 SILICONFLOW_API_KEY 或 EMBEDDING_API_KEY / OPENAI_API_KEY）
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - EMBEDDING_API_BASE=${EMBEDDING_API_BASE:-https://api.siliconflow.cn/v1}
+      - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-BAAI/bge-m3}
+      - EMBEDDING_TIKTOKEN_ENABLED=${EMBEDDING_TIKTOKEN_ENABLED:-false}
       # Chroma 拓扑：统一走 remote server（docker compose 中的 chroma 服务）
       - CHROMA_MODE=remote
       - CHROMA_HOST=chroma
@@ -79,8 +86,8 @@ services:
       - HTTPS_PROXY=
       - http_proxy=
       - https_proxy=
-      - NO_PROXY=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com
-      - no_proxy=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com
+      - NO_PROXY=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn
+      - no_proxy=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn
     networks:
       - ai-coach-net
     healthcheck:
@@ -114,7 +121,12 @@ services:
       - SPRING_DATASOURCE_PASSWORD=password
       - SPRING_DATA_REDIS_HOST=redis
       - AI_SERVICE_URL=http://ai-service:8000/api
-      - DEEPSEEK_API_KEY=sk-fd7c46b7e28b415d8dae2b8876f57402
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - http_proxy=
+      - https_proxy=
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - NO_PROXY=ai-service,postgres,redis,localhost,127.0.0.1,172.18.0.0/16
     networks:
       - ai-coach-net
     healthcheck:

@@ -13,8 +13,8 @@ class Settings:
     # --------------------------------------------------------------------------
     # 大模型（LLM）和嵌入（Embedding）模型配置
     # --------------------------------------------------------------------------
-    # 项目要求使用 DeepSeek 作为 LLM 和 Embedding 模型。
-    # 我们将使用 langchain-openai 库，通过指定 API Base 来访问 DeepSeek 的兼容 OpenAI 的接口。
+    # LLM：DeepSeek（OpenAI 兼容 Chat Completions）。
+    # 嵌入：硅基流动等 OpenAI 兼容 /v1/embeddings（DeepSeek 无稳定嵌入接口）。
     
     # DeepSeek API Key
     # 请在项目根目录创建 .env 文件并添加 DEEPSEEK_API_KEY="your_actual_api_key"
@@ -25,11 +25,26 @@ class Settings:
     
     # 对话模型的名称
     LLM_MODEL_NAME: str = "deepseek-chat"
-    
-    # 嵌入模型的名称
-    # 注意：虽然原始需求提到了 DashScopeEmbeddings，但为保持一致性并遵循“deepseek作为...Embedding模型”的要求，
-    # 我们在这里使用 DeepSeek 的嵌入模型。
-    EMBEDDING_MODEL_NAME: str = "deepseek-text-embedding"
+
+    # --------------------------------------------------------------------------
+    # 嵌入模型（与 LLM 分离）
+    # Key 优先级：EMBEDDING_API_KEY > SILICONFLOW_API_KEY > OPENAI_API_KEY
+    # 文档：https://docs.siliconflow.cn/cn/api-reference/embeddings/create-embeddings
+    # --------------------------------------------------------------------------
+    EMBEDDING_API_KEY: str = (
+        os.getenv("EMBEDDING_API_KEY", "").strip()
+        or os.getenv("SILICONFLOW_API_KEY", "").strip()
+        or os.getenv("OPENAI_API_KEY", "").strip()
+    )
+    EMBEDDING_API_BASE: str = os.getenv(
+        "EMBEDDING_API_BASE", "https://api.siliconflow.cn/v1"
+    ).rstrip("/")
+    EMBEDDING_MODEL_NAME: str = os.getenv(
+        "EMBEDDING_MODEL_NAME", "BAAI/bge-m3"
+    )
+    EMBEDDING_TIKTOKEN_ENABLED: bool = os.getenv(
+        "EMBEDDING_TIKTOKEN_ENABLED", "false"
+    ).lower() in ("1", "true", "yes")
 
     # --------------------------------------------------------------------------
     # 向量数据库（ChromaDB）配置

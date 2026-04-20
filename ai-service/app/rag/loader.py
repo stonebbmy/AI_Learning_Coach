@@ -1,7 +1,9 @@
 
-from langchain_community.document_loaders import UnstructuredMarkdownLoader
 from typing import List
+
 from langchain.schema.document import Document
+from langchain_community.document_loaders import TextLoader
+
 
 def load_markdown_file(file_path: str) -> List[Document]:
     """
@@ -13,8 +15,8 @@ def load_markdown_file(file_path: str) -> List[Document]:
     Returns:
         List[Document]: 从 Markdown 文件加载的文档对象列表。
     """
-    # UnstructuredMarkdownLoader 会将整个文件加载为一个 Document 对象
-    loader = UnstructuredMarkdownLoader(file_path, mode="single")
+    # 接口仅接受 .md；纯文本加载即可，避免 unstructured 体积与依赖链
+    loader = TextLoader(file_path, encoding="utf-8")
     docs = loader.load()
     return docs
 

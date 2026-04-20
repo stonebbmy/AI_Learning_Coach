@@ -18,3 +18,4 @@ langgraph>=0.2,<0.3
 mcp>=1.0
 httpx
 beautifulsoup4
+debugpy

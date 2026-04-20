@@ -37,7 +37,7 @@ RUN mvn dependency:go-offline
 COPY src ./src
 
 # Package the application, skipping tests for faster builds.
-RUN mvn package -DskipTests
+RUN mvn clean package -DskipTests
 
 
 # --- Stage 2: Final Stage ---
