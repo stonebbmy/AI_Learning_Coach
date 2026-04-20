@@ -1,6 +1,7 @@
 
 package com.example.aicoach.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
@@ -8,8 +9,10 @@ import lombok.Data;
  */
 @Data
 public class TaskDto {
+    @JsonProperty("task_id")
     private int taskId;
     private String description;
+    @JsonProperty("estimated_time")
     private String estimatedTime;
     private String status;
 }

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -22,7 +23,7 @@ public class ChatService {
     private final WebClient webClient;
     private final ChatHistoryRepository chatHistoryRepository;
 
-    public ChatService(WebClient.Builder webClientBuilder, 
+    public ChatService(WebClient.Builder webClientBuilder,
                        @Value("${ai-service.url}") String aiServiceUrl,
                        ChatHistoryRepository chatHistoryRepository) {
         this.webClient = webClientBuilder.baseUrl(aiServiceUrl).build();
@@ -48,7 +49,8 @@ public class ChatService {
         log.info("Sending JSON: {}", json);
         return webClient.post()
                 .uri("/chat")
-                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .contentType(MediaType.APPLICATION_JSON)
+//                .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)
@@ -60,7 +62,7 @@ public class ChatService {
                 .doOnError(error -> log.error("调用AI聊天服务时发生错误", error))
                 .doOnComplete(() -> log.info("AI聊天服务流式响应完成。"));
     }
-    
+
     /**
      * 保存一次完整的问答历史记录。
      * 注意：在流式场景下，需要由客户端在接收完所有数据后，再发起一次请求来保存完整记录。

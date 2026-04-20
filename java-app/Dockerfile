@@ -1,10 +1,12 @@
 # 全局构建参数
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
+# 国内无法直连 Docker Hub 时，可用 DaoCloud 公共镜像：docker.m.daocloud.io/library/...
+ARG JAVA_BUILD_IMAGE=docker.m.daocloud.io/library/eclipse-temurin:17-jdk-jammy
+ARG JAVA_RUN_IMAGE=docker.m.daocloud.io/library/eclipse-temurin:17-jre-jammy
 
 # --- Stage 1: Build Stage ---
-# Avoid Docker Hub in restricted networks: use Microsoft container registry.
-FROM mcr.microsoft.com/openjdk/jdk:17-ubuntu AS build
+FROM ${JAVA_BUILD_IMAGE} AS build
 
 # Re-declare args for this stage.
 ARG HTTP_PROXY
@@ -16,6 +18,9 @@ ENV HTTP_PROXY=$HTTP_PROXY \
     
 # Set the working directory.
 WORKDIR /app
+
+# Maven 使用国内镜像，避免 central 超时
+COPY maven-settings.xml /root/.m2/settings.xml
 
 # Install Maven (and CA certs) via apt.
 RUN sed -i \
@@ -41,8 +46,7 @@ RUN mvn clean package -DskipTests
 
 
 # --- Stage 2: Final Stage ---
-# Runtime stage: keep the same base to avoid extra pulls.
-FROM mcr.microsoft.com/openjdk/jdk:17-ubuntu
+FROM ${JAVA_RUN_IMAGE}
 
 WORKDIR /app
 

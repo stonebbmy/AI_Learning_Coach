@@ -1,9 +1,9 @@
-
-
+# 国内网络若无法访问 Docker Hub（auth.docker.io 超时），默认经 DaoCloud 公共镜像拉取。
+# 若你已配置 Docker Desktop「镜像加速」或可直接访问 docker.io，可改回官方镜像名。
 services:
   # ---------------- PostgreSQL Database ----------------
   postgres:
-    image: postgres:15-alpine
+    image: docker.m.daocloud.io/library/postgres:15-alpine
     container_name: aicoach_postgres
     environment:
       POSTGRES_DB: ai_coach
@@ -23,7 +23,7 @@ services:
 
   # ---------------- Redis Cache ----------------
   redis:
-    image: redis:7-alpine
+    image: docker.m.daocloud.io/library/redis:7-alpine
     container_name: aicoach_redis
     ports:
       - "6379:6379"
@@ -37,7 +37,7 @@ services:
 
   # ---------------- Chroma Vector Database ----------------
   chroma:
-    image: chromadb/chroma:0.4.24 # 使用一个具体的版本以保证稳定性
+    image: docker.m.daocloud.io/chromadb/chroma:0.4.24
     container_name: aicoach_chroma
     ports:
       - "8001:8000" # 将Chroma的8000端口映射到主机的8001，避免与ai-service冲突
@@ -61,6 +61,7 @@ services:
         - HTTPS_PROXY=http://host.docker.internal:7890
         - PIP_INDEX_URL=http://pypi.tuna.tsinghua.edu.cn/simple
         - PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+        - PYTHON_BASE_IMAGE=docker.m.daocloud.io/library/python:3.11.8-slim-bullseye
     container_name: aicoach_ai_service
     depends_on:
       chroma:
@@ -104,6 +105,8 @@ services:
       args:
         - HTTP_PROXY=http://host.docker.internal:7890
         - HTTPS_PROXY=http://host.docker.internal:7890
+        - JAVA_BUILD_IMAGE=docker.m.daocloud.io/library/eclipse-temurin:17-jdk-jammy
+        - JAVA_RUN_IMAGE=docker.m.daocloud.io/library/eclipse-temurin:17-jre-jammy
     container_name: aicoach_java_app
     depends_on:
       postgres:

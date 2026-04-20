@@ -4,9 +4,10 @@ ARG HTTPS_PROXY
 # 可选：pip 镜像与可信 host（国内网络更稳定）
 ARG PIP_INDEX_URL=http://pypi.tuna.tsinghua.edu.cn/simple
 ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+# 国内无法直连 Docker Hub 时，可用 DaoCloud 公共镜像：docker.m.daocloud.io/library/python:...
+ARG PYTHON_BASE_IMAGE=docker.m.daocloud.io/library/python:3.11.8-slim-bullseye
 # --- Stage 1: Build Stage ---
-# Use a specific version of the slim image for reproducibility.
-FROM python:3.11.8-slim-bullseye AS builder
+FROM ${PYTHON_BASE_IMAGE} AS builder
 
 # Re-declare build args for this stage (required for expansion).
 ARG HTTP_PROXY
@@ -49,8 +50,7 @@ RUN python -m pip wheel --wheel-dir /app/wheels -r requirements.txt
 
 
 # --- Stage 2: Final Stage ---
-# Use the same base image for the final, lean container.
-FROM python:3.11.8-slim-bullseye
+FROM ${PYTHON_BASE_IMAGE}
 
 ARG PIP_INDEX_URL
 ARG PIP_TRUSTED_HOST
