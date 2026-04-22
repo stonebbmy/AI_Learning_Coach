@@ -50,7 +50,7 @@ public class ChatService {
         return webClient.post()
                 .uri("/chat")
                 .contentType(MediaType.APPLICATION_JSON)
-//                .accept(MediaType.TEXT_EVENT_STREAM)
+               .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(request)
                 .retrieve()
                 .bodyToFlux(String.class)

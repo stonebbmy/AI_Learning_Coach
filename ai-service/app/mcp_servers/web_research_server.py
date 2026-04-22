@@ -30,7 +30,11 @@ async def web_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     url = "https://duckduckgo.com/html/"
     params = {"q": query}
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(15.0),
+        follow_redirects=True,
+        trust_env=True,
+    ) as client:
         resp = await client.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
 
@@ -75,14 +79,18 @@ async def web_fetch(url: str, max_chars: int = 6000) -> Dict[str, Any]:
     if parsed.scheme not in ("http", "https"):
         raise ValueError("Only http/https URLs are allowed.")
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0), follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(20.0),
+        follow_redirects=True,
+        trust_env=True,
+    ) as client:
         resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "html.parser")
     title = ""
     if soup.title and soup.title.string:
-        title = _normalize_ws(soup.title.string)
+        title = _normalize_ws(soup.title.string)  
 
     # Remove scripts/styles
     for tag in soup(["script", "style", "noscript"]):

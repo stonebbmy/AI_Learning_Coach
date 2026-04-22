@@ -12,24 +12,79 @@ from mcp.client.stdio import stdio_client
 
 from ..core.trace import get_request_id
 
+def _default_allowlist_domains() -> List[str]:
+    """web_fetch 允许的域名；可用环境变量 MCP_WEB_ALLOW_DOMAINS 覆盖（逗号分隔）。"""
+    return [
+        "python.langchain.com",
+        "docs.trychroma.com",
+        "modelcontextprotocol.io",
+        "github.com",
+        "python.org",
+        "docs.python.org",
+        "readthedocs.io",
+        "developer.mozilla.org",
+        "stackoverflow.com",
+        "stackexchange.com",
+        "wikipedia.org",
+        "medium.com",
+        "dev.to",
+        "arxiv.org",
+        "huggingface.co",
+        "pytorch.org",
+        "tensorflow.org",
+        "numpy.org",
+        "pandas.pydata.org",
+        "matplotlib.org",
+        "kubernetes.io",
+        "docker.com",
+        "docs.docker.com",
+        "learn.microsoft.com",
+        "microsoft.com",
+        "oracle.com",
+        "kotlinlang.org",
+        "go.dev",
+        "golang.org",
+        "rust-lang.org",
+        "nginx.org",
+        "w3.org",
+        "ietf.org",
+        "rfc-editor.org",
+        "duckduckgo.com",
+        "google.com",
+        "googleapis.com",
+        "pypi.org",
+        "anaconda.com",
+        "conda.io",
+        "jupyter.org",
+        "openai.com",
+        "anthropic.com",
+        "langchain.com",
+        "trychroma.com",
+        "siliconflow.cn",
+        "realpython.com",
+        "w3schools.com",
+    ]
+
+
 def _allowlist_domains() -> List[str]:
     raw = os.getenv("MCP_WEB_ALLOW_DOMAINS", "").strip()
     if not raw:
-        # 默认允许常见技术文档域名；可按需扩展
-        return [
-            "python.langchain.com",
-            "docs.trychroma.com",
-            "modelcontextprotocol.io",
-            "github.com",
-        ]
+        return _default_allowlist_domains()
     return [d.strip().lower() for d in raw.split(",") if d.strip()]
+
+
+def _url_hostname(url: str) -> str:
+    u = url.strip()
+    if u.startswith("//"):
+        u = "https:" + u
+    return (urlparse(u).hostname or "").lower()
 
 
 def _is_allowed_url(url: str) -> bool:
     allow = _allowlist_domains()
     if not allow:
         return False
-    host = (urlparse(url).hostname or "").lower()
+    host = _url_hostname(url)
     return any(host == d or host.endswith("." + d) for d in allow)
 
 
@@ -66,14 +121,24 @@ async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
     return result
 
 
+def _normalize_search_results(raw: Any) -> List[Dict[str, Any]]:
+    """MCP / FastMCP 有时把列表序列化成 JSON 数组，json.loads 后为 list；个别路径会变成单条 dict。"""
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+    if isinstance(raw, dict):
+        return [raw]
+    return []
+
+
 async def web_research(query: str, *, max_results: int = 3, max_chars: int = 4000) -> str:
     """
     High-level helper used by LangGraph nodes.
     Returns a compact context string with citations.
     """
     max_results = max(1, min(int(max_results), 5))
-    search_results = await _call_mcp_tool("web_search", {"query": query, "max_results": max_results})
-    if not isinstance(search_results, list) or not search_results:
+    raw = await _call_mcp_tool("web_search", {"query": query, "max_results": max_results})
+    search_results = _normalize_search_results(raw)
+    if not search_results:
         return ""
 
     lines: List[str] = []

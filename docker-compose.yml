@@ -1,5 +1,6 @@
-# 国内网络若无法访问 Docker Hub（auth.docker.io 超时），默认经 DaoCloud 公共镜像拉取。
-# 若你已配置 Docker Desktop「镜像加速」或可直接访问 docker.io，可改回官方镜像名。
+# 默认「兜底」：DaoCloud 拉取 Docker Hub 镜像；构建期 PyPI/apt/Maven 走国内镜像（见 ai-service/java-app Dockerfile），不依赖 Clash 对 PyPI 的 TLS 稳定性。
+# 运行期业务外网仍经 compose 注入的 DOCKER_* 代理（本机 Clash）；详见 docker/NETWORK.txt
+
 services:
   # ---------------- PostgreSQL Database ----------------
   postgres:
@@ -45,6 +46,8 @@ services:
       - ./ai-service/chroma_db:/chroma/.chroma/index # 将持久化目录挂载到容器中
     networks:
       - ai-coach-net
+    environment:
+      - CHROMA_SERVER_CORS_ALLOW_ORIGINS=["*"]
     healthcheck:
       # chroma 镜像不自带 curl/wget，使用 python 内置 urllib 做探活
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat', timeout=2).read()"]
@@ -56,13 +59,19 @@ services:
   ai-service:
     build:
       context: ./ai-service
+      # build 阶段容器默认没有 compose 运行时的 extra_hosts，需单独注入，否则 HTTP_PROXY 里 host.docker.internal 无法解析
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
-        - HTTP_PROXY=http://host.docker.internal:7890
-        - HTTPS_PROXY=http://host.docker.internal:7890
-        - PIP_INDEX_URL=http://pypi.tuna.tsinghua.edu.cn/simple
-        - PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
-        - PYTHON_BASE_IMAGE=docker.m.daocloud.io/library/python:3.11.8-slim-bullseye
+        - HTTP_PROXY=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+        - HTTPS_PROXY=${DOCKER_HTTPS_PROXY-http://host.docker.internal:7890}
+        - PYTHON_BASE_IMAGE=${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.11.8-slim-bullseye}
+        - PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        - PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
     container_name: aicoach_ai_service
+    # 部分环境下 host.docker.internal 未注入 /etc/hosts，导致 HTTP_PROXY 无法解析、httpx 报 Name or service not known
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -90,17 +99,20 @@ services:
       - REDIS_PORT=6379
       # Prompt 版本：qa_v1.yaml / qa_v2.yaml
       - PROMPT_QA_VERSION=v1
+      # MCP web_fetch 域名白名单（空则使用代码内默认列表）；逗号分隔，可覆盖
+      - MCP_WEB_ALLOW_DOMAINS=${MCP_WEB_ALLOW_DOMAINS:-}
       # 可选：Langfuse 追踪（未配置则自动跳过）
       # - LANGFUSE_PUBLIC_KEY=
       # - LANGFUSE_SECRET_KEY=
       # - LANGFUSE_HOST=https://cloud.langfuse.com
-      # 运行时禁用代理（避免容器内指向 127.0.0.1:7890 的无效代理导致依赖下载失败）
-      - HTTP_PROXY=
-      - HTTPS_PROXY=
-      - http_proxy=
-      - https_proxy=
-      - NO_PROXY=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn
-      - no_proxy=localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn
+      - HTTP_PROXY=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - HTTPS_PROXY=${DOCKER_HTTPS_PROXY-http://host.docker.internal:7890}
+      - http_proxy=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - https_proxy=${DOCKER_HTTPS_PROXY-http://host.docker.internal:7890}
+      - ALL_PROXY=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - all_proxy=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - NO_PROXY=${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn,172.16.0.0/12,172.18.0.0/16}
+      - no_proxy=${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn,172.16.0.0/12,172.18.0.0/16}
     networks:
       - ai-coach-net
     healthcheck:
@@ -114,12 +126,16 @@ services:
   java-app:
     build:
       context: ./java-app
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
-        - HTTP_PROXY=http://host.docker.internal:7890
-        - HTTPS_PROXY=http://host.docker.internal:7890
-        - JAVA_BUILD_IMAGE=docker.m.daocloud.io/library/eclipse-temurin:17-jdk-jammy
-        - JAVA_RUN_IMAGE=docker.m.daocloud.io/library/eclipse-temurin:17-jre-jammy
+        - HTTP_PROXY=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+        - HTTPS_PROXY=${DOCKER_HTTPS_PROXY-http://host.docker.internal:7890}
+        - JAVA_BUILD_IMAGE=${JAVA_BUILD_IMAGE:-docker.m.daocloud.io/library/eclipse-temurin:17-jdk-jammy}
+        - JAVA_RUN_IMAGE=${JAVA_RUN_IMAGE:-docker.m.daocloud.io/library/eclipse-temurin:17-jre-jammy}
     container_name: aicoach_java_app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,11 +153,14 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - AI_SERVICE_URL=http://ai-service:8000/api
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
-      - http_proxy=
-      - https_proxy=
-      - HTTP_PROXY=
-      - HTTPS_PROXY=
-      - NO_PROXY=ai-service,postgres,redis,localhost,127.0.0.1,172.18.0.0/16
+      - HTTP_PROXY=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - HTTPS_PROXY=${DOCKER_HTTPS_PROXY-http://host.docker.internal:7890}
+      - http_proxy=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - https_proxy=${DOCKER_HTTPS_PROXY-http://host.docker.internal:7890}
+      - ALL_PROXY=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - all_proxy=${DOCKER_HTTP_PROXY-http://host.docker.internal:7890}
+      - NO_PROXY=${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,ai-service,postgres,redis,java-app,chroma,172.16.0.0/12,172.18.0.0/16}
+      - no_proxy=${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,ai-service,postgres,redis,java-app,chroma,172.16.0.0/12,172.18.0.0/16}
     networks:
       - ai-coach-net
     healthcheck:
