@@ -42,8 +42,10 @@ services:
     container_name: aicoach_chroma
     ports:
       - "8001:8000" # 将Chroma的8000端口映射到主机的8001，避免与ai-service冲突
+    # 官方 chromadb/chroma 镜像默认持久化目录为 WORKDIR(/chroma) 下的 ./chroma，即容器内 /chroma/chroma（见镜像内 docker-compose.server.example.yml）
+    # 误挂 /chroma/.chroma/index 时数据仍写在 /chroma/chroma，宿主机卷不会生效
     volumes:
-      - ./ai-service/chroma_db:/chroma/.chroma/index # 将持久化目录挂载到容器中
+      - ./ai-service/chroma_db:/chroma/chroma
     networks:
       - ai-coach-net
     environment:
@@ -88,7 +90,7 @@ services:
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
       - EMBEDDING_API_BASE=${EMBEDDING_API_BASE:-https://api.siliconflow.cn/v1}
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-BAAI/bge-m3}
-      - EMBEDDING_TIKTOKEN_ENABLED=${EMBEDDING_TIKTOKEN_ENABLED:-false}
+      - EMBEDDING_TIKTOKEN_ENABLED=${EMBEDDING_TIKTOKEN_ENABLED:-true}
       # Chroma 拓扑：统一走 remote server（docker compose 中的 chroma 服务）
       - CHROMA_MODE=remote
       - CHROMA_HOST=chroma
@@ -170,6 +172,122 @@ services:
       timeout: 10s
       retries: 10
 
+  # ---------------- Vue Frontend (Nginx) ----------------
+  web:
+    build:
+      context: ./web
+      args:
+        - NODE_BASE_IMAGE=${NODE_BASE_IMAGE:-docker.m.daocloud.io/library/node:20-alpine}
+        - NGINX_BASE_IMAGE=${NGINX_BASE_IMAGE:-docker.m.daocloud.io/library/nginx:1.25-alpine}
+        # 覆盖宿主机/BuildKit 注入的 127.0.0.1:7890，使 npm 在容器内对 npmmirror 直连
+        - HTTP_PROXY=
+        - HTTPS_PROXY=
+        - http_proxy=
+        - https_proxy=
+    container_name: aicoach_web
+    ports:
+      - "3000:80"    # 宿主机 3000 → nginx 80
+    depends_on:
+      java-app:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ---------------- Redis Exporter（将 Redis 指标暴露给 Prometheus）----
+  redis-exporter:
+    image: docker.m.daocloud.io/oliver006/redis_exporter:v1.61.0
+    container_name: aicoach_redis_exporter
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    ports:
+      - "9121:9121"    # Prometheus 从此端口 scrape
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ai-coach-net
+    # 官方镜像为 distroless，无 wget/sh；用二进制自带 -version 作探活（能证明进程可执行；非 HTTP 级检测）
+    healthcheck:
+      test: ["CMD", "/redis_exporter", "-version"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------- Prometheus Metrics Scraper ----------------
+  prometheus:
+    image: docker.m.daocloud.io/prom/prometheus:v2.51.2
+    container_name: aicoach_prometheus
+    # 宿主机/ Docker 可能注入 127.0.0.1:7890 代理；容器内无该端口，wget 健康检查会失败，抓内部 target 也易被误走代理
+    environment:
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - http_proxy=
+      - https_proxy=
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      ai-service:
+        condition: service_healthy
+      redis-exporter:
+        condition: service_healthy
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------- Grafana Visualization ----------------
+  grafana:
+    image: docker.m.daocloud.io/grafana/grafana:10.4.2
+    container_name: aicoach_grafana
+    environment:
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - http_proxy=
+      - https_proxy=
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # 禁止 Grafana 向外发送遥测数据
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    ports:
+      - "3001:3000"    # 宿主机 3001 避免与前端 3000 冲突
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - ai-coach-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 # ---------------- Network Definition ----------------
 networks:
   ai-coach-net:
@@ -178,4 +296,8 @@ networks:
 # ---------------- Volume Definition ----------------
 volumes:
   postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local

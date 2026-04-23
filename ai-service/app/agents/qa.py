@@ -31,6 +31,7 @@ def _format_docs(docs: List[Document]) -> str:
 
 
 def _retrieve_and_format(question: str) -> str:
+    """内部检索格式化函数，供 LCEL 链和评估模块调用。"""
     retriever = get_retriever_from_store()
     docs = retriever.invoke(question)
     if settings.RERANK_ENABLED:
@@ -38,6 +39,10 @@ def _retrieve_and_format(question: str) -> str:
     elif len(docs) > settings.RERANK_TOP_N:
         docs = docs[: settings.RERANK_TOP_N]
     return _format_docs(docs)
+
+
+# 公开别名：供 rag_evaluator 等外部模块直接调用，避免引用私有函数
+retrieve_and_format_docs = _retrieve_and_format
 
 
 def _normalize_input(x: str | Dict[str, Any]) -> Dict[str, Any]:

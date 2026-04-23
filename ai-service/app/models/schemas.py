@@ -1,6 +1,6 @@
 
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 
 # ==========================================================================
 # 基础模型
@@ -83,4 +83,34 @@ class ChatAgentRequest(BaseModel):
 
 # 此端点的请求将是 FastAPI 的 `UploadFile`, 而不是 Pydantic 模型。
 # 响应将是 `StatusResponse`。
+
+
+class KnowledgeSourceItem(BaseModel):
+    """按源文件聚合后的知识库条目"""
+    source: str = Field(..., description="Markdown 文件名")
+    chunk_count: int = Field(..., description="该文件切分后的向量块数量")
+    upload_date: Optional[str] = Field(None, description="上传日期（来自元数据）")
+
+
+class KnowledgeSummaryResponse(BaseModel):
+    """知识库概览：总块数 + 按文件统计"""
+    total_chunks: int
+    sources: List[KnowledgeSourceItem]
+
+
+class KnowledgeChunkItem(BaseModel):
+    """单条向量块（用于浏览，正文为截断预览）"""
+    id: str
+    source: Optional[str] = None
+    upload_date: Optional[str] = None
+    text_preview: str = Field(..., description="正文预览（截断）")
+    text_length: int = Field(..., description="原始正文长度")
+
+
+class KnowledgeChunksResponse(BaseModel):
+    """分页拉取向量块"""
+    limit: int
+    offset: int
+    has_more: bool
+    chunks: List[KnowledgeChunkItem]
 

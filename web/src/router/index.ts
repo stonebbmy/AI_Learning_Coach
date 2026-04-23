@@ -6,6 +6,8 @@ const KnowledgeView = () => import('../views/KnowledgeView.vue')
 const ChatView = () => import('../views/ChatView.vue')
 const PlanView = () => import('../views/PlanView.vue')
 const AgentChatView = () => import('../views/AgentChatView.vue')
+const MetricsView = () => import('../views/MetricsView.vue')
+const EvalView = () => import('../views/EvalView.vue')
 
 export default createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,5 +18,7 @@ export default createRouter({
     { path: '/chat', name: 'chat', component: ChatView },
     { path: '/agent', name: 'agent', component: AgentChatView },
     { path: '/plan', name: 'plan', component: PlanView },
+    { path: '/metrics', name: 'metrics', component: MetricsView },
+    { path: '/eval', name: 'eval', component: EvalView },
   ],
 })

@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 50s      # 每 15s 采集一次
+  evaluation_interval: 50s  # 每 15s 评估告警规则
+
+scrape_configs:
+  # AI Service 指标采集
+  # 目标：ai-service 容器的 /api/metrics/prometheus 端点
+  - job_name: "aicoach_ai_service"
+    metrics_path: "/api/metrics/prometheus"
+    static_configs:
+      - targets: ["ai-service:8000"]
+        labels:
+          service: "ai-service"
+          env: "docker"
+
+  # Redis 指标采集（通过 redis_exporter 代理）
+  # redis_exporter 连接到 Redis 并将所有指标转为 Prometheus 格式
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: "redis"
+          env: "docker"
+
+  # Prometheus 自身监控（可选，方便排查采集问题）
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

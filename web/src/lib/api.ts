@@ -79,6 +79,61 @@ export async function uploadKnowledge(file: File): Promise<{ success: boolean; m
   return r.json()
 }
 
+export interface KnowledgeSourceItem {
+  source: string
+  chunk_count: number
+  upload_date: string | null
+}
+
+export interface KnowledgeSummaryResponse {
+  total_chunks: number
+  sources: KnowledgeSourceItem[]
+}
+
+export async function fetchKnowledgeSummary(): Promise<KnowledgeSummaryResponse> {
+  const r = await fetch(`${aiBase}/knowledge/summary`)
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+  return r.json() as Promise<KnowledgeSummaryResponse>
+}
+
+export interface KnowledgeChunkItem {
+  id: string
+  source: string | null
+  upload_date: string | null
+  text_preview: string
+  text_length: number
+}
+
+export interface KnowledgeChunksResponse {
+  limit: number
+  offset: number
+  has_more: boolean
+  chunks: KnowledgeChunkItem[]
+}
+
+export async function fetchKnowledgeChunks(params: {
+  source?: string
+  limit?: number
+  offset?: number
+}): Promise<KnowledgeChunksResponse> {
+  const q = new URLSearchParams()
+  if (params.source) q.set('source', params.source)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const qs = q.toString()
+  const base = aiBase.replace(/\/$/, '')
+  const url = `${base}/knowledge/chunks${qs ? `?${qs}` : ''}`
+  const r = await fetch(url)
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+  return r.json() as Promise<KnowledgeChunksResponse>
+}
+
 export interface TaskItem {
   task_id: number
   description: string
@@ -202,6 +257,124 @@ export async function chatAgent(question: string, sessionId: string): Promise<Ch
     throw new Error(t || `HTTP ${r.status}`)
   }
   return r.json() as Promise<ChatAgentResponse>
+}
+
+// ---------------------------------------------------------------------------
+// 可观测性指标（直连 Python AI 服务）
+// ---------------------------------------------------------------------------
+
+export interface MetricsCache {
+  exact_hit: number
+  exact_miss: number
+  exact_hit_rate: number
+  semantic_hit: number
+  semantic_miss: number
+  semantic_hit_rate: number
+  combined_hit_rate: number
+}
+
+export interface MetricsStats {
+  timestamp: number
+  cache: MetricsCache
+  tokens: {
+    total_in: number
+    total_out: number
+    estimated_cost_usd: number
+  }
+  latency: {
+    avg_ms: number
+    sample_count: number
+  }
+  requests: {
+    total: number
+    error: number
+    error_rate: number
+  }
+  error?: string
+}
+
+export async function fetchMetricsStats(): Promise<MetricsStats> {
+  const r = await fetch(`${aiBase}/metrics/stats`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json() as Promise<MetricsStats>
+}
+
+export interface CircuitBreakerStatus {
+  state: 'closed' | 'open' | 'half_open'
+  failure_count: number
+  failure_threshold: number
+  reset_timeout_seconds: number
+  open_for_seconds?: number
+  remaining_cooldown_seconds?: number
+}
+
+export async function fetchCircuitBreaker(): Promise<CircuitBreakerStatus> {
+  const r = await fetch(`${aiBase}/metrics/circuit-breaker`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json() as Promise<CircuitBreakerStatus>
+}
+
+export interface SessionTokenUsage {
+  session_id: string
+  used_tokens: number
+  budget: number
+  remaining: number
+  budget_enabled: boolean
+  ttl_seconds: number
+  error?: string
+}
+
+export async function fetchSessionTokenUsage(sessionId: string): Promise<SessionTokenUsage> {
+  const r = await fetch(`${aiBase}/metrics/session/${encodeURIComponent(sessionId)}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json() as Promise<SessionTokenUsage>
+}
+
+export interface HealthDetail {
+  status: string
+  services: Record<string, string>
+}
+
+export async function fetchHealthDetail(): Promise<HealthDetail> {
+  const r = await fetch(`${aiBase}/health/detail`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json() as Promise<HealthDetail>
+}
+
+// ---------------------------------------------------------------------------
+// RAG 质量评估（LLM-as-Judge，直连 Python AI 服务）
+// ---------------------------------------------------------------------------
+
+export interface RagEvalScoreItem {
+  score: number
+  reason: string
+}
+
+export interface RagEvalResponse {
+  question: string
+  answer_preview: string
+  context_preview: string
+  scores: {
+    faithfulness: RagEvalScoreItem
+    answer_relevance: RagEvalScoreItem
+    context_relevance: RagEvalScoreItem
+    overall: number
+  }
+  interpretation: string
+  error?: string
+}
+
+export async function evalRag(question: string): Promise<RagEvalResponse> {
+  const r = await fetch(`${aiBase}/eval/rag`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+  return r.json() as Promise<RagEvalResponse>
 }
 
 /**

@@ -1,0 +1,162 @@
+{
+  "title": "AI Learning Coach - Observability",
+  "uid": "aicoach-main",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "精确缓存命中率 (Exact Cache Hit Rate)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "unit": "percentunit"
+      },
+      "targets": [
+        {
+          "expr": "rate(aicoach_cache_hits_total{type=\"exact\"}[5m]) / (rate(aicoach_cache_hits_total{type=\"exact\"}[5m]) + rate(aicoach_cache_misses_total{type=\"exact\"}[5m]))",
+          "legendFormat": "Exact Hit Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "语义缓存命中率 (Semantic Cache Hit Rate)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "unit": "percentunit"
+      },
+      "targets": [
+        {
+          "expr": "rate(aicoach_cache_hits_total{type=\"semantic\"}[5m]) / (rate(aicoach_cache_hits_total{type=\"semantic\"}[5m]) + rate(aicoach_cache_misses_total{type=\"semantic\"}[5m]))",
+          "legendFormat": "Semantic Hit Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "累计 Token 消耗 (Total Tokens)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "aicoach_tokens_total{direction=\"in\"} + aicoach_tokens_total{direction=\"out\"}",
+          "legendFormat": "Total Tokens",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "错误率 (Error Rate)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "unit": "percentunit",
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.01 },
+            { "color": "red", "value": 0.05 }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(aicoach_request_errors_total[5m]) / rate(aicoach_requests_total[5m])",
+          "legendFormat": "Error Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "请求速率 (Request Rate / s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "rate(aicoach_requests_total[1m])",
+          "legendFormat": "requests/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(aicoach_request_errors_total[1m])",
+          "legendFormat": "errors/s",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "平均延迟 (Avg Latency ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      },
+      "targets": [
+        {
+          "expr": "rate(aicoach_latency_sum_ms[1m]) / rate(aicoach_latency_count[1m])",
+          "legendFormat": "avg latency (ms)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "缓存命中/未命中趋势 (Cache Hits vs Misses)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "rate(aicoach_cache_hits_total{type=\"exact\"}[1m])",
+          "legendFormat": "exact hits/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(aicoach_cache_misses_total{type=\"exact\"}[1m])",
+          "legendFormat": "exact misses/s",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(aicoach_cache_hits_total{type=\"semantic\"}[1m])",
+          "legendFormat": "semantic hits/s",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(aicoach_cache_misses_total{type=\"semantic\"}[1m])",
+          "legendFormat": "semantic misses/s",
+          "refId": "D"
+        }
+      ]
+    }
+  ]
+}

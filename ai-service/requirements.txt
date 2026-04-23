@@ -2,7 +2,7 @@ numpy>=1.24
 fastapi
 uvicorn[standard]
 pydantic
-# 当前代码使用的是 LangChain 0.2.x 的模块路径（langchain.prompts / langchain.schema / langchain.agents 等）
+# LangChain 0.2.x 模块路径（langchain.prompts / langchain.schema / langchain.agents 等）
 langchain>=0.2,<0.3
 langchain-community>=0.2,<0.3
 langchain-openai>=0.1,<0.2
@@ -22,3 +22,8 @@ mcp>=1.0
 httpx
 beautifulsoup4
 debugpy
+# ── 新增：生产级增强依赖 ────────────────────────────────────────────────
+# LLM 调用重试（指数退避 + 重试条件判断）
+tenacity>=8.2
+# 性能压测脚本使用（本地 benchmark，不进入生产镜像也可）
+# httpx 已包含，无需重复引入

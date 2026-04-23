@@ -9,6 +9,13 @@ load_dotenv()
 class Settings:
     """
     项目配置类，统一管理所有环境变量和敏感信息。
+
+    设计原则：
+    - 所有配置从环境变量读取，支持 12-Factor App 规范
+    - 每个配置项都有安全的默认值，本地开发无需完整配置
+    - 敏感信息（API Key 等）永远不硬编码，也不打印到日志
+    - 类属性形式（非 Pydantic Settings）：简单直接，无额外依赖，
+      若需要类型校验可迁移到 pydantic-settings（BaseSettings）
     """
     # --------------------------------------------------------------------------
     # 大模型（LLM）和嵌入（Embedding）模型配置
@@ -43,7 +50,7 @@ class Settings:
         "EMBEDDING_MODEL_NAME", "BAAI/bge-m3"
     )
     EMBEDDING_TIKTOKEN_ENABLED: bool = os.getenv(
-        "EMBEDDING_TIKTOKEN_ENABLED", "false"
+        "EMBEDDING_TIKTOKEN_ENABLED", "true"
     ).lower() in ("1", "true", "yes")
 
     # --------------------------------------------------------------------------
@@ -129,6 +136,64 @@ class Settings:
     # --------------------------------------------------------------------------
     VISION_MODEL_NAME: str = os.getenv("VISION_MODEL_NAME", "deepseek-chat")
     MULTIMODAL_ENABLED: bool = os.getenv("MULTIMODAL_ENABLED", "false").lower() in ("1", "true", "yes")
+
+    # --------------------------------------------------------------------------
+    # 限流配置（Redis 滑动窗口限流）
+    # --------------------------------------------------------------------------
+    # 是否启用限流（false = 不限流，适合本地开发）
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "false").lower() in ("1", "true", "yes")
+    # 每个时间窗口内允许的最大请求数
+    RATE_LIMIT_MAX_REQUESTS: int = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "60"))
+    # 时间窗口大小（秒）
+    RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+    # Redis Key 前缀（避免与其他项目冲突）
+    RATE_LIMIT_KEY_PREFIX: str = os.getenv("RATE_LIMIT_KEY_PREFIX", "rl:aicoach")
+
+    # --------------------------------------------------------------------------
+    # API Key 鉴权配置
+    # --------------------------------------------------------------------------
+    # 是否启用 API Key 鉴权（false = 不鉴权，适合内网或本地开发）
+    API_KEY_ENABLED: bool = os.getenv("API_KEY_ENABLED", "false").lower() in ("1", "true", "yes")
+    # 合法的 API Key 列表（逗号分隔，支持多 Key 轮换）
+    API_KEYS: str = os.getenv("API_KEYS", "dev-key-change-in-production")
+
+    # --------------------------------------------------------------------------
+    # 输入 Guardrails 配置
+    # --------------------------------------------------------------------------
+    # 用户输入的最大字符数（防止 Token 炸弹攻击）
+    MAX_INPUT_LENGTH: int = int(os.getenv("MAX_INPUT_LENGTH", "4000"))
+
+    # --------------------------------------------------------------------------
+    # LLM 重试 & 超时配置（tenacity + asyncio）
+    # --------------------------------------------------------------------------
+    # LLM 调用失败时的最大重试次数（只重试 429/5xx/网络错误，不重试 400/401）
+    LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
+    # 重试初始等待时间（秒）
+    LLM_RETRY_WAIT_MIN: float = float(os.getenv("LLM_RETRY_WAIT_MIN", "1.0"))
+    # 重试最大等待时间（秒，指数退避上限）
+    LLM_RETRY_WAIT_MAX: float = float(os.getenv("LLM_RETRY_WAIT_MAX", "10.0"))
+    # 每次 LLM 非流式调用的超时秒数（planner 节点等单次 ainvoke 场景）
+    LLM_INVOKE_TIMEOUT: float = float(os.getenv("LLM_INVOKE_TIMEOUT", "60.0"))
+    # LangGraph 计划生成图的总超时秒数（含多次 LLM + MCP 联网检索）
+    PLAN_TIMEOUT_SECONDS: float = float(os.getenv("PLAN_TIMEOUT_SECONDS", "120.0"))
+    # 流式 RAG 问答的总超时秒数（超时后发送 error 事件）
+    CHAT_STREAM_TIMEOUT: float = float(os.getenv("CHAT_STREAM_TIMEOUT", "90.0"))
+
+    # --------------------------------------------------------------------------
+    # 熔断器（Circuit Breaker）配置
+    # --------------------------------------------------------------------------
+    # 触发熔断的连续失败次数阈值
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5"))
+    # 熔断开启后的冷却时间（秒），冷却期内直接拒绝请求
+    CIRCUIT_BREAKER_RESET_TIMEOUT: float = float(os.getenv("CIRCUIT_BREAKER_RESET_TIMEOUT", "30.0"))
+
+    # --------------------------------------------------------------------------
+    # 每 Session Token 配额（恶意消耗 Token 防护）
+    # --------------------------------------------------------------------------
+    # 单个 session 在 TTL 内允许消耗的最大 Token 数（0 = 不限制）
+    SESSION_TOKEN_BUDGET: int = int(os.getenv("SESSION_TOKEN_BUDGET", "0"))
+    # session Token 计数窗口（秒），窗口结束后自动清零（与会话 TTL 一致）
+    SESSION_TOKEN_WINDOW: int = int(os.getenv("SESSION_TOKEN_WINDOW", "3600"))
 
 # 创建一个全局可用的配置实例
 settings = Settings()

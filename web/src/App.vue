@@ -12,6 +12,8 @@ import { RouterLink, RouterView } from 'vue-router'
         <RouterLink to="/chat">RAG 问答</RouterLink>
         <RouterLink to="/agent">工具 Agent</RouterLink>
         <RouterLink to="/plan">每日计划</RouterLink>
+        <RouterLink to="/metrics">监控指标</RouterLink>
+        <RouterLink to="/eval">RAG 评估</RouterLink>
       </nav>
     </header>
     <main class="main">
