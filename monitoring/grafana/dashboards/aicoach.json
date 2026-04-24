@@ -157,6 +157,65 @@
           "refId": "D"
         }
       ]
+    },
+    {
+      "id": 10,
+      "title": "Java BFF - HTTP 请求速率 (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "rate(http_server_requests_seconds_count{application=\"ai-coach-java-app\"}[1m])",
+          "legendFormat": "{{method}} {{uri}} {{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Java BFF - 平均响应延迟 (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "rate(http_server_requests_seconds_sum{application=\"ai-coach-java-app\"}[1m]) / rate(http_server_requests_seconds_count{application=\"ai-coach-java-app\"}[1m]) * 1000",
+          "legendFormat": "avg latency ms - {{uri}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Java BFF - JVM 堆内存使用 (MB)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 26 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "unit": "decmbytes"
+      },
+      "targets": [
+        {
+          "expr": "jvm_memory_used_bytes{application=\"ai-coach-java-app\", area=\"heap\"} / 1024 / 1024",
+          "legendFormat": "Heap Used MB",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Java BFF - 活跃线程数",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 26 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "jvm_threads_live_threads{application=\"ai-coach-java-app\"}",
+          "legendFormat": "Live Threads",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }

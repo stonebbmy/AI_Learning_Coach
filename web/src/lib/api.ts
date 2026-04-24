@@ -1,6 +1,8 @@
 /**
  * 开发环境走 Vite proxy，避免跨域；生产可设 VITE_JAVA_BASE / VITE_AI_BASE。
  */
+import { userStore } from './userStore'
+
 const dev = import.meta.env.DEV
 
 export const javaBase = dev
@@ -9,7 +11,15 @@ export const javaBase = dev
 
 export const aiBase = dev
   ? '/proxy-ai'
-  : (import.meta.env.VITE_AI_BASE as string) || 'http://localhost:8000/api'
+  : (import.meta.env.VITE_AI_BASE as string) || '/proxy-ai'
+
+/** 获取含 userId 的通用请求头 */
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    'X-User-Id': userStore.state.userId,
+    ...extra,
+  }
+}
 
 export interface OutlineChapter {
   chapter_title: string
@@ -29,7 +39,7 @@ export async function generateOutline(
 ): Promise<OutlineGenerateResponse> {
   const r = await fetch(`${aiBase}/outline/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ target, deadline }),
   })
   if (!r.ok) {
@@ -55,7 +65,7 @@ export function toOutlineConfirmBody(o: OutlineGenerateResponse) {
 export async function confirmOutline(body: ReturnType<typeof toOutlineConfirmBody>) {
   const r = await fetch(`${javaBase}/api/outline/confirm`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
   if (!r.ok) {
@@ -68,8 +78,10 @@ export async function confirmOutline(body: ReturnType<typeof toOutlineConfirmBod
 export async function uploadKnowledge(file: File): Promise<{ success: boolean; message: string }> {
   const fd = new FormData()
   fd.append('file', file)
-  const r = await fetch(`${aiBase}/knowledge/upload`, {
+  const userId = userStore.state.userId
+  const r = await fetch(`${javaBase}/api/knowledge/upload?user_id=${encodeURIComponent(userId)}`, {
     method: 'POST',
+    headers: authHeaders(),
     body: fd,
   })
   if (!r.ok) {
@@ -91,7 +103,10 @@ export interface KnowledgeSummaryResponse {
 }
 
 export async function fetchKnowledgeSummary(): Promise<KnowledgeSummaryResponse> {
-  const r = await fetch(`${aiBase}/knowledge/summary`)
+  const userId = userStore.state.userId
+  const r = await fetch(`${javaBase}/api/knowledge/summary?user_id=${encodeURIComponent(userId)}`, {
+    headers: authHeaders(),
+  })
   if (!r.ok) {
     const t = await r.text()
     throw new Error(t || `HTTP ${r.status}`)
@@ -120,13 +135,13 @@ export async function fetchKnowledgeChunks(params: {
   offset?: number
 }): Promise<KnowledgeChunksResponse> {
   const q = new URLSearchParams()
+  q.set('user_id', userStore.state.userId)
   if (params.source) q.set('source', params.source)
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
-  const qs = q.toString()
-  const base = aiBase.replace(/\/$/, '')
-  const url = `${base}/knowledge/chunks${qs ? `?${qs}` : ''}`
-  const r = await fetch(url)
+  const base = javaBase.replace(/\/$/, '')
+  const url = `${base}/api/knowledge/chunks?${q.toString()}`
+  const r = await fetch(url, { headers: authHeaders() })
   if (!r.ok) {
     const t = await r.text()
     throw new Error(t || `HTTP ${r.status}`)
@@ -136,6 +151,7 @@ export async function fetchKnowledgeChunks(params: {
 
 export interface TaskItem {
   task_id: number
+  db_id?: number
   description: string
   estimated_time: string
   status: string
@@ -146,28 +162,35 @@ export interface DailyPlanResponse {
   tasks: TaskItem[]
 }
 
-export async function getTodayPlan(goal: string): Promise<DailyPlanResponse> {
-  const q = encodeURIComponent(goal)
-  const r = await fetch(`${javaBase}/api/plan/today?goal=${q}`)
+export async function getTodayPlan(
+  goal: string,
+  outlineId?: number | null,
+): Promise<DailyPlanResponse & { id?: number }> {
+  const q = new URLSearchParams({ goal })
+  if (outlineId) q.set('outlineId', String(outlineId))
+  const r = await fetch(`${javaBase}/api/plan/today?${q.toString()}`, {
+    headers: authHeaders(),
+  })
   if (!r.ok) {
     const t = await r.text()
     throw new Error(t || `HTTP ${r.status}`)
   }
   const data = (await r.json()) as Record<string, unknown>
-  return normalizePlan(data)
+  return normalizePlan(data) as DailyPlanResponse & { id?: number }
 }
 
 /** 解析 Spring/Java 返回的 camelCase（若后端统一为 snake 也可兼容） */
-export function normalizePlan(data: Record<string, unknown>): DailyPlanResponse {
+export function normalizePlan(data: Record<string, unknown>): DailyPlanResponse & { id?: number } {
   const planTitle = (data.planTitle ?? data.plan_title) as string
   const rawTasks = (data.tasks ?? []) as Record<string, unknown>[]
   const tasks = rawTasks.map((t) => ({
-    task_id: Number(t.taskId ?? t.task_id),
+    task_id: Number(t.taskId ?? t.task_id ?? t.id),
+    db_id: Number(t.id ?? 0),
     description: String(t.description ?? ''),
     estimated_time: String(t.estimatedTime ?? t.estimated_time ?? ''),
     status: String(t.status ?? ''),
   }))
-  return { plan_title: planTitle, tasks }
+  return { id: data.id as number | undefined, plan_title: planTitle, tasks }
 }
 
 function extractSseDataPayload(raw: string): string | null {
@@ -190,17 +213,18 @@ export async function streamChat(
   sessionId: string,
   onChunk: (text: string) => void,
   signal?: AbortSignal,
-  /** 可选：显式多轮历史；不传则完全依赖后端按 sessionId 存 Redis 的短期记忆 */
-  messages?: { role: string; content: string }[]
+  messages?: { role: string; content: string }[],
+  planId?: number | null,
 ): Promise<void> {
   const body: Record<string, unknown> = { question, sessionId }
   if (messages?.length) body.messages = messages
+  if (planId) body.planId = planId
   const r = await fetch(`${javaBase}/api/chat`, {
     method: 'POST',
-    headers: {
+    headers: authHeaders({
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
-    },
+    }),
     body: JSON.stringify(body),
     signal,
   })
@@ -249,7 +273,7 @@ export interface ChatAgentResponse {
 export async function chatAgent(question: string, sessionId: string): Promise<ChatAgentResponse> {
   const r = await fetch(`${javaBase}/api/chat/agent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ question, sessionId }),
   })
   if (!r.ok) {
@@ -294,7 +318,7 @@ export interface MetricsStats {
 }
 
 export async function fetchMetricsStats(): Promise<MetricsStats> {
-  const r = await fetch(`${aiBase}/metrics/stats`)
+  const r = await fetch(`${javaBase}/api/metrics/stats`, { headers: authHeaders() })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json() as Promise<MetricsStats>
 }
@@ -309,7 +333,7 @@ export interface CircuitBreakerStatus {
 }
 
 export async function fetchCircuitBreaker(): Promise<CircuitBreakerStatus> {
-  const r = await fetch(`${aiBase}/metrics/circuit-breaker`)
+  const r = await fetch(`${javaBase}/api/metrics/circuit-breaker`, { headers: authHeaders() })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json() as Promise<CircuitBreakerStatus>
 }
@@ -325,7 +349,10 @@ export interface SessionTokenUsage {
 }
 
 export async function fetchSessionTokenUsage(sessionId: string): Promise<SessionTokenUsage> {
-  const r = await fetch(`${aiBase}/metrics/session/${encodeURIComponent(sessionId)}`)
+  const r = await fetch(
+    `${javaBase}/api/metrics/session/${encodeURIComponent(sessionId)}`,
+    { headers: authHeaders() },
+  )
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json() as Promise<SessionTokenUsage>
 }
@@ -336,7 +363,7 @@ export interface HealthDetail {
 }
 
 export async function fetchHealthDetail(): Promise<HealthDetail> {
-  const r = await fetch(`${aiBase}/health/detail`)
+  const r = await fetch(`${javaBase}/api/health/detail`, { headers: authHeaders() })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json() as Promise<HealthDetail>
 }
@@ -365,9 +392,9 @@ export interface RagEvalResponse {
 }
 
 export async function evalRag(question: string): Promise<RagEvalResponse> {
-  const r = await fetch(`${aiBase}/eval/rag`, {
+  const r = await fetch(`${javaBase}/api/eval/rag`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ question }),
   })
   if (!r.ok) {
@@ -378,12 +405,12 @@ export async function evalRag(question: string): Promise<RagEvalResponse> {
 }
 
 /**
- * 多模态占位探测（直连 Python，默认返回 503）
+ * 多模态占位探测（经 Java 代理，默认返回 503）
  */
 export async function visionProbe(imageUrl: string, question: string): Promise<unknown> {
-  const r = await fetch(`${aiBase}/chat/vision-probe`, {
+  const r = await fetch(`${javaBase}/api/chat/vision-probe`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ image_url: imageUrl, question }),
   })
   const text = await r.text()
@@ -391,5 +418,151 @@ export async function visionProbe(imageUrl: string, question: string): Promise<u
     return JSON.parse(text) as unknown
   } catch {
     return { raw: text, status: r.status }
+  }
+}
+
+/** 更新指定任务状态 */
+export async function updateTaskStatus(taskId: number, status: string): Promise<void> {
+  const r = await fetch(`${javaBase}/api/task/${taskId}/status`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ status }),
+  })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+}
+
+export interface ProgressSummary {
+  userId: string
+  totalTasks: number
+  doneTasks: number
+  completionRate: number
+  chapterStats: { chapter: string; total: number; done: number }[]
+}
+
+/** 获取学习进度汇总 */
+export async function fetchProgressSummary(): Promise<ProgressSummary> {
+  const r = await fetch(`${javaBase}/api/progress/summary`, { headers: authHeaders() })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json() as Promise<ProgressSummary>
+}
+
+// ---------------------------------------------------------------------------
+// 智能私教总控层
+// ---------------------------------------------------------------------------
+
+export interface TutorSseCallbacks {
+  onIntent?: (intent: string) => void
+  onActions?: (actions: string[]) => void
+  onChunk: (text: string) => void
+  onEnd?: () => void
+  onError?: (msg: string) => void
+}
+
+/**
+ * 智能私教 SSE 流式对话。
+ * 解析多种 SSE 事件类型：intent / actions / data / end / error
+ */
+export async function streamTutorChat(
+  question: string,
+  sessionId: string,
+  callbacks: TutorSseCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const r = await fetch(`${javaBase}/api/tutor/chat`, {
+    method: 'POST',
+    headers: authHeaders({
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    }),
+    body: JSON.stringify({
+      question,
+      session_id: sessionId,
+    }),
+    signal,
+  })
+  if (!r.ok || !r.body) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+
+  const reader = r.body.getReader()
+  const dec = new TextDecoder()
+  let lineBuf = ''
+  let currentEvent = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    lineBuf += dec.decode(value, { stream: true })
+
+    let nl: number
+    while ((nl = lineBuf.indexOf('\n')) >= 0) {
+      const line = lineBuf.slice(0, nl).replace(/\r$/, '')
+      lineBuf = lineBuf.slice(nl + 1)
+
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim()
+      } else if (line.startsWith('data:')) {
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') {
+          currentEvent = ''
+          continue
+        }
+
+        if (currentEvent === 'intent') {
+          callbacks.onIntent?.(payload)
+        } else if (currentEvent === 'actions') {
+          try {
+            const arr = JSON.parse(payload) as string[]
+            callbacks.onActions?.(arr)
+          } catch { /* ignore */ }
+        } else if (currentEvent === 'end') {
+          callbacks.onEnd?.()
+        } else if (currentEvent === 'error') {
+          callbacks.onError?.(payload)
+        } else {
+          // 普通正文 chunk（可能是 plain text 或 JSON 字符串）
+          let text = payload
+          try {
+            const parsed = JSON.parse(payload) as unknown
+            if (typeof parsed === 'string') text = parsed
+          } catch { /* 不是 JSON，直接用原文 */ }
+          if (text) callbacks.onChunk(text)
+        }
+        currentEvent = ''
+      }
+    }
+  }
+}
+
+export interface TutorContextPayload {
+  currentOutlineId?: number | null
+  currentPlanId?: number | null
+  activeTopic?: string
+  progressRate?: number
+  outlineChapters?: string[]
+  planTasks?: { description: string; status: string }[]
+}
+
+/** 同步私教上下文（切换大纲/计划后调用） */
+export async function updateTutorContext(payload: TutorContextPayload): Promise<void> {
+  const r = await fetch(`${javaBase}/api/tutor/context`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      current_outline_id: payload.currentOutlineId ?? null,
+      current_plan_id: payload.currentPlanId ?? null,
+      active_topic: payload.activeTopic ?? '',
+      progress_rate: payload.progressRate ?? 0,
+      outline_chapters: payload.outlineChapters ?? [],
+      plan_tasks: payload.planTasks ?? [],
+    }),
+  })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
   }
 }

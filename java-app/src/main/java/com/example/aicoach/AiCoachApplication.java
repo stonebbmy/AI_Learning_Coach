@@ -4,13 +4,14 @@ package com.example.aicoach;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.openfeign.EnableFeignClients;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * AI Learning Coach - Java Application Entry Point
  */
 @SpringBootApplication
-@EnableFeignClients // 启用 OpenFeign 声明式客户端功能
-// @EnableCaching is already on CacheConfig, so it's not strictly needed here.
+@EnableFeignClients
+@EnableAsync
 public class AiCoachApplication {
 
     public static void main(String[] args) {

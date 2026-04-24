@@ -9,10 +9,16 @@ import lombok.Data;
  */
 @Data
 public class TaskDto {
+    /** 任务在数据库中的主键 ID（用于状态更新接口） */
+    private Long id;
+
     @JsonProperty("task_id")
     private int taskId;
+
     private String description;
+
     @JsonProperty("estimated_time")
     private String estimatedTime;
+
     private String status;
 }

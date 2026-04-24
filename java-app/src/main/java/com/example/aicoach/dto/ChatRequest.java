@@ -19,9 +19,22 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ChatRequest {
     private String question;
-    @JsonProperty("session_id")          // 序列化时字段名为 session_id
-    @JsonAlias({"sessionId", "session_id"})  // 反序列化时接受两种名称
+
+    @JsonProperty("session_id")
+    @JsonAlias({"sessionId", "session_id"})
     private String sessionId;
+
     /** 可选：显式携带近期多轮消息；为空时由 Python 端按 session_id 从 Redis 读取 */
     private List<ChatMessageDto> messages;
+
+    /** 可选：前端传入的每日计划数据库 ID，用于注入今日任务上下文 */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private Long planId;
+
+    /** 由 Java 层从 DailyPlan 数据库记录生成，注入 Python 的 plan_context 字段 */
+    @JsonProperty("plan_context")
+    private String planContext;
+
+    @JsonProperty("user_id")
+    private String userId;
 }

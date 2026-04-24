@@ -12,7 +12,11 @@ import java.util.List;
  */
 @Data
 public class DailyPlanResponse {
+    /** 计划在 Java 数据库中的 ID，前端用于关联聊天上下文 */
+    private Long id;
+
     @JsonProperty("plan_title")
     private String planTitle;
+
     private List<TaskDto> tasks;
 }

@@ -18,6 +18,8 @@ public class DailyPlan {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String userId;
+
     private String planTitle;
 
     private LocalDate planDate;

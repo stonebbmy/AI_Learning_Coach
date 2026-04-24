@@ -16,12 +16,12 @@ spring:
     username: user
     password: password
     driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: false
+
   jpa:
     hibernate:
-      # `update` 会在启动时根据实体类更新表结构，适合开发环境
-      # 在生产环境中，建议使用 `validate` 并配合 Flyway/Liquibase 进行迁移
       ddl-auto: update
-    # 在控制台打印执行的 SQL，便于调试
     show-sql: true
 
   # ===================================================================
@@ -94,3 +94,19 @@ springdoc:
     path: /api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+# ===================================================================
+# ACTUATOR（Spring Boot 健康检查 + Prometheus 指标暴露）
+# ===================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+

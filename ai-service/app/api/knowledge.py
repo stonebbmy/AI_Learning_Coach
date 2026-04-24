@@ -19,8 +19,25 @@ router = APIRouter()
 
 _TEXT_PREVIEW_MAX = 4000
 
+
+def _build_where(user_id: str | None, source: str | None) -> dict | None:
+    """构造 Chroma where 过滤条件，支持 user_id 与 source 的组合过滤。"""
+    conditions = []
+    if user_id and user_id not in ("", "anonymous"):
+        conditions.append({"owner": {"$eq": user_id}})
+    if source and source.strip():
+        conditions.append({"source": {"$eq": source.strip()}})
+    if len(conditions) == 0:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
+
+
 @router.get("/knowledge/summary", response_model=KnowledgeSummaryResponse)
-def knowledge_summary():
+def knowledge_summary(
+    user_id: str | None = Query(None, description="按用户过滤；不传则查看全量知识库（管理员视角）"),
+):
     """
     查看知识库概览：总向量块数、按 source（文件名）聚合的条数与上传日期。
     数据来自 Chroma 集合 `ai_learning_notes` 的元数据。
@@ -30,7 +47,11 @@ def knowledge_summary():
         n = col.count()
         if n == 0:
             return KnowledgeSummaryResponse(total_chunks=0, sources=[])
-        raw = col.get(include=["metadatas"], limit=max(n, 1))
+        get_kwargs: dict = {"include": ["metadatas"], "limit": max(n, 1)}
+        where = _build_where(user_id, None)
+        if where:
+            get_kwargs["where"] = where
+        raw = col.get(**get_kwargs)
         metas = raw.get("metadatas") or []
         counts: dict[str, int] = defaultdict(int)
         dates: dict[str, str | None] = {}
@@ -52,7 +73,7 @@ def knowledge_summary():
             )
             for s in sorted(counts.keys(), key=str.lower)
         ]
-        return KnowledgeSummaryResponse(total_chunks=n, sources=sources)
+        return KnowledgeSummaryResponse(total_chunks=len(metas), sources=sources)
     except Exception as e:
         print(f"[knowledge] summary error: {e}")
         raise HTTPException(status_code=500, detail=f"读取知识库失败: {e}") from e
@@ -61,11 +82,12 @@ def knowledge_summary():
 @router.get("/knowledge/chunks", response_model=KnowledgeChunksResponse)
 def knowledge_chunks(
     source: str | None = Query(None, description="仅查看某个 Markdown 源文件的块；不传则浏览全部（分页）"),
+    user_id: str | None = Query(None, description="按上传用户过滤"),
     limit: int = Query(30, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
     """
-    分页查看已入库的文本块（截断展示），可筛选 source。
+    分页查看已入库的文本块（截断展示），可筛选 source 和 user_id。
     """
     try:
         col = get_vector_store()._collection
@@ -74,8 +96,9 @@ def knowledge_chunks(
             "limit": limit,
             "offset": offset,
         }
-        if source and source.strip():
-            kwargs["where"] = {"source": source.strip()}
+        where = _build_where(user_id, source)
+        if where:
+            kwargs["where"] = where
         raw = col.get(**kwargs)
         ids = raw.get("ids") or []
         metas = raw.get("metadatas") or []
@@ -109,64 +132,62 @@ def knowledge_chunks(
 
 
 @router.post("/knowledge/upload", response_model=StatusResponse)
-async def upload_knowledge(file: UploadFile = File(...)):
+async def upload_knowledge(
+    file: UploadFile = File(...),
+    user_id: str = Query("anonymous", description="上传者用户 ID，写入 Chroma metadata 的 owner 字段"),
+):
     """
     上传 Markdown 格式的学习笔记，将其处理并存入向量数据库。
-    
+
     技术要点:
     1.  接收并暂存上传的 Markdown 文件。
     2.  使用 `RecursiveCharacterTextSplitter` 按配置切分文档。
-    3.  为文档块添加文件名和上传日期等元数据。
+    3.  为文档块添加文件名、上传日期、owner(user_id) 等元数据，支持多用户隔离检索。
     4.  调用向量库接口，将文档块向量化并持久化存储到 ChromaDB。
     """
     if not file.filename or not file.filename.endswith(".md"):
         raise HTTPException(status_code=400, detail="仅支持 Markdown (.md) 文件。")
 
-    # 去重检查：若同名文件已存在于向量库，先删除旧数据再导入
-    # 避免重复上传导致 Chroma 中出现冗余向量（影响检索质量）
+    # 去重检查：若同名文件 + 同一 owner 已存在，先删除旧数据再导入
     try:
-        existing = get_vector_store().get(where={"source": file.filename})
+        dedup_where: dict = {"source": {"$eq": file.filename}}
+        if user_id and user_id != "anonymous":
+            dedup_where = {"$and": [{"source": {"$eq": file.filename}}, {"owner": {"$eq": user_id}}]}
+        existing = get_vector_store().get(where=dedup_where)
         if existing and existing.get("ids"):
             get_vector_store().delete(ids=existing["ids"])
-            print(f"Removed {len(existing['ids'])} old chunks for '{file.filename}'")
+            print(f"Removed {len(existing['ids'])} old chunks for '{file.filename}' (owner={user_id})")
     except Exception as e:
         print(f"[knowledge] dedup check failed (non-fatal): {e}")
-        
-    # 创建一个 موقت 目录来存放上传的文件
+
     temp_dir = "data"
     os.makedirs(temp_dir, exist_ok=True)
     file_path = os.path.join(temp_dir, file.filename)
 
     try:
-        # 将上传的文件保存到磁盘
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-            
-        # 1. 加载文档
-        print(f"Loading file: {file_path}")
+
+        print(f"Loading file: {file_path} (owner={user_id})")
         docs = load_markdown_file(file_path)
-        
-        # 2. 为文档添加元数据 (metadata)
+
         upload_date = datetime.now().strftime("%Y-%m-%d")
         for doc in docs:
-            # 确保每个文档块都有文件名和日期作为元数据
             doc.metadata["source"] = file.filename
             doc.metadata["upload_date"] = upload_date
-            
-        # 3. 切分文档
+            doc.metadata["owner"] = user_id
+
         text_splitter = get_text_splitter()
         split_docs = text_splitter.split_documents(docs)
         print(f"Split file into {len(split_docs)} chunks.")
-        
-        # 4. 存入向量数据库
+
         add_documents_to_store(split_docs)
-        
+
         return StatusResponse(success=True, message=f"文件 '{file.filename}' 上传并处理成功。")
     except Exception as e:
         print(f"[Error] Failed to process upload: {e}")
         raise HTTPException(status_code=500, detail=f"处理文件时发生内部错误: {str(e)}")
     finally:
-        # 无论成功与否，都清理临时文件
         if os.path.exists(file_path):
             os.remove(file_path)
 

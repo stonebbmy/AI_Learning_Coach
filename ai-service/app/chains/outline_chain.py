@@ -2,7 +2,7 @@
 from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 
-from ..core.llm import llm
+from ..core.llm import llm_for_structured
 from ..models.schemas import StudyOutlineResponse
 from ..prompts.templates import outline_system_template, few_shot_examples
 
@@ -47,8 +47,8 @@ def get_outline_generation_chain():
         ("human", "请根据我的需求生成学习大纲。\n【学习目标】: {target}\n【期望期限】: {deadline}")
     ])
 
-    # 3. 使用 LCEL 将 Prompt, LLM, 和 Parser 串联成链
-    chain = prompt | llm | parser
+    # 3. LCEL：非流式 LLM + PydanticOutputParser
+    chain = prompt | llm_for_structured | parser
     
     return chain
 

@@ -4,8 +4,10 @@ import {
   generateOutline,
   confirmOutline,
   toOutlineConfirmBody,
+  updateTutorContext,
   type OutlineGenerateResponse,
 } from '@/lib/api'
+import { userStore } from '@/lib/userStore'
 
 const target = ref('在 3 个月内从 Java 后端转向 AI 应用开发，掌握 LangChain、RAG 与 Agent 工程化')
 const deadline = ref('3个月')
@@ -14,7 +16,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const outline = ref<OutlineGenerateResponse | null>(null)
-const savedId = ref<number | null>(null)
+const savedId = ref<number | null>(userStore.state.currentOutlineId)
 
 async function onGenerate() {
   error.value = ''
@@ -36,7 +38,14 @@ async function onConfirm() {
   saving.value = true
   try {
     const res = (await confirmOutline(toOutlineConfirmBody(outline.value))) as { id?: number }
-    savedId.value = res.id ?? null
+    const id = res.id ?? null
+    savedId.value = id
+    userStore.setOutlineId(id)
+    // 同步大纲上下文到私教 Redis
+    updateTutorContext({
+      currentOutlineId: id,
+      outlineChapters: outline.value?.chapters.map((c) => c.chapter_title) ?? [],
+    }).catch(() => { /* 静默失败 */ })
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -81,7 +90,7 @@ async function onConfirm() {
         {{ saving ? '保存中…' : '确认并保存到数据库' }}
       </button>
       <p v-if="savedId !== null" style="margin-top: 0.75rem; color: var(--muted); font-size: 0.9rem">
-        已保存，数据库 ID：{{ savedId }}
+        已保存，大纲 ID：{{ savedId }}（已关联到账户，生成计划时将自动带入章节）
       </p>
     </div>
   </div>

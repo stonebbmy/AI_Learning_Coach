@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { streamChat } from '@/lib/api'
+import { userStore } from '@/lib/userStore'
 
 interface ChatTurn {
   role: 'user' | 'assistant'
@@ -35,7 +36,8 @@ async function onSend() {
         answer.value += chunk
       },
       abort.signal,
-      history
+      history,
+      userStore.state.currentPlanId,
     )
     transcript.value = [...transcript.value, { role: 'user', content: q }, { role: 'assistant', content: answer.value }]
     question.value = ''
@@ -63,7 +65,12 @@ function clearSession() {
 <template>
   <div>
     <h1>RAG 问答</h1>
-    <p class="lead">经 Java <code>POST /api/chat</code> 转发 Python SSE；支持多轮（messages + sessionId）。</p>
+    <p class="lead">
+      经 Java <code>POST /api/chat</code> 转发 Python SSE；支持多轮（messages + sessionId）。
+      <span v-if="userStore.state.currentPlanId" style="color: var(--muted); font-size: 0.9rem">
+        · 已关联今日计划 #{{ userStore.state.currentPlanId }}，AI 将结合计划上下文回答
+      </span>
+    </p>
 
     <div class="card">
       <label>会话 ID</label>

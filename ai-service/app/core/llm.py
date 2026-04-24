@@ -67,6 +67,17 @@ llm = ChatOpenAI(
     max_retries=2,
 )
 
+# 与 PydanticOutputParser 等搭配时使用（全局 llm 为流式，供对话）
+llm_for_structured = ChatOpenAI(
+    model=settings.LLM_MODEL_NAME,
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url=settings.DEEPSEEK_API_BASE,
+    temperature=0,
+    streaming=False,
+    timeout=120,
+    max_retries=2,
+)
+
 # ---------------------------------------------------------------------------
 # Embedding 单例（OpenAI 兼容接口，默认硅基流动 bge-m3）
 # ---------------------------------------------------------------------------

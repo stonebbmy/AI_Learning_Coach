@@ -111,7 +111,10 @@ def _record_session_tokens(session_id: str, tokens: int) -> None:
 # ---------------------------------------------------------------------------
 
 def _merge_messages_for_prompt(request: ChatRequest) -> str:
-    """优先使用客户端显式传入的 messages；否则从 Redis 读取会话窗口。"""
+    """
+    优先使用客户端显式传入的 messages；否则从 Redis 读取会话窗口。
+    若请求携带 plan_context，将其追加在 system 前缀，引导 LLM 聚焦今日任务。
+    """
     if request.messages:
         merged = [{"role": m.role, "content": m.content} for m in request.messages]
     else:
@@ -121,6 +124,16 @@ def _merge_messages_for_prompt(request: ChatRequest) -> str:
     if lm:
         hb = (hb + "\n【长期记忆检索】\n" + lm).strip()
     return hb
+
+
+def _build_system_prefix(request: ChatRequest) -> str:
+    """根据请求中的 plan_context 构建系统提示前缀，引导回答聚焦今日学习任务。"""
+    if not request.plan_context:
+        return ""
+    return (
+        f"【学习上下文】用户今日的学习计划如下，请优先结合这些任务内容来回答问题：\n"
+        f"{request.plan_context}\n\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -174,12 +187,16 @@ async def chat_with_rag(request: ChatRequest):
             f"窗口内最大 {settings.SESSION_TOKEN_BUDGET} Token）"
         )
 
-    print(f"[chat] session={request.session_id} question='{request.question[:50]}'")
+    print(f"[chat] session={request.session_id} user={request.user_id} question='{request.question[:50]}'")
     qa_chain = get_qa_chain()
     history_block = _merge_messages_for_prompt(request)
+    system_prefix = _build_system_prefix(request)
 
-    # --- Step 3: 双层缓存短路 ---
-    cached = get_exact_cached_answer(request.question) or try_semantic_cache_hit(request.question)
+    # --- Step 3: 双层缓存短路（含 plan_context 时跳过缓存，保证答案与当日计划一致）---
+    use_cache = not bool(request.plan_context)
+    cached = None
+    if use_cache:
+        cached = get_exact_cached_answer(request.question) or try_semantic_cache_hit(request.question)
     if cached:
         tok_in = count_tokens(request.question)
         tok_out = count_tokens(cached)
@@ -208,7 +225,8 @@ async def chat_with_rag(request: ChatRequest):
 
     async def stream_generator():
         try:
-            payload = {"question": request.question, "history_block": history_block}
+            effective_question = (system_prefix + request.question) if system_prefix else request.question
+            payload = {"question": effective_question, "history_block": history_block}
 
             # 带总超时的流式收集：防止 LLM API 挂起导致请求永久占用连接
             try:

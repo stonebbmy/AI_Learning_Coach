@@ -40,13 +40,17 @@ async def generate_daily_plan(request: DailyPlanRequest):
     - asyncio.wait_for：整图总超时，防止长任务悬挂
     - JSON 修复循环（repair 节点）：最多修复 2 次，有次数上限防无限循环
     """
-    print(f"[rid={get_request_id()}] plan.generate_daily_plan: goal='{request.goal[:50]}'")
+    print(f"[rid={get_request_id()}] plan.generate_daily_plan: goal='{request.goal[:50]}' chapters={len(request.chapters)}")
     graph = get_planner_graph()
+
+    invocation: dict = {"goal": request.goal}
+    if request.chapters:
+        invocation["chapters"] = request.chapters
 
     try:
         # 整图总超时：含 LLM 调用 + MCP 联网检索 + 最多 2 次修复
         final_state = await asyncio.wait_for(
-            graph.ainvoke({"goal": request.goal}),
+            graph.ainvoke(invocation),
             timeout=settings.PLAN_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:

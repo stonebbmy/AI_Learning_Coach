@@ -26,6 +26,7 @@ from ..core.config import settings
 
 class PlannerState(TypedDict, total=False):
     goal: str
+    chapters: list  # 可选：来自已确认大纲的章节标题列表
     notes_context: str
     web_context: str
     plan_raw: str
@@ -126,9 +127,10 @@ JSON schema:
 1) 任务数 3-5 个
 2) 任务粒度可执行（包含动作、产出物）
 3) estimated_time 给出区间（例如 30-45分钟 / 1-2小时）
+4) 若提供了【学习大纲章节】，任务必须优先覆盖这些章节的内容，不得偏离
 """.strip(),
         ),
-        ("human", "今天目标：{goal}\n\n【我的笔记检索上下文】\n{notes_context}\n\n【联网检索上下文】\n{web_context}"),
+        ("human", "今天目标：{goal}\n\n{chapters_block}\n\n【我的笔记检索上下文】\n{notes_context}\n\n【联网检索上下文】\n{web_context}"),
     ]
 )
 
@@ -142,8 +144,14 @@ async def _draft_plan(state: PlannerState) -> PlannerState:
     - 单次超时（LLM_INVOKE_TIMEOUT 秒）
     """
     print(f"[rid={get_request_id()}] planner.draft_plan")
+    chapters = state.get("chapters") or []
+    if chapters:
+        chapters_block = "【学习大纲章节（必须覆盖）】\n" + "\n".join(f"- {c}" for c in chapters)
+    else:
+        chapters_block = ""
     prompt = _DRAFT_PROMPT.format_messages(
         goal=state["goal"],
+        chapters_block=chapters_block,
         notes_context=state.get("notes_context", ""),
         web_context=state.get("web_context", ""),
     )

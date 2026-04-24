@@ -39,6 +39,8 @@ class StudyOutlineResponse(BaseModel):
 class DailyPlanRequest(BaseModel):
     """生成每日计划的请求体"""
     goal: str = Field(..., description="今天的核心学习目标，例如：'学习并实践 LangChain 的 LCEL'")
+    user_id: str = Field("anonymous", description="用户唯一标识，用于个性化计划生成")
+    chapters: List[str] = Field(default_factory=list, description="可选：来自已确认大纲的章节标题列表，用于约束计划范围")
 
 class Task(BaseModel):
     """每日计划中的单个任务"""
@@ -67,6 +69,8 @@ class ChatRequest(BaseModel):
     question: str = Field(..., description="用户提出的问题")
     session_id: str = Field("default_session", description="会话ID，用于跟踪对话历史")
     messages: List[ChatMessage] = Field(default_factory=list, description="可选：客户端携带的近期多轮消息")
+    user_id: str = Field("anonymous", description="用户唯一标识，用于知识库按用户过滤")
+    plan_context: str = Field("", description="可选：今日学习计划摘要，注入 system prompt 以聚焦问答范围")
 
 
 class ChatAgentRequest(BaseModel):

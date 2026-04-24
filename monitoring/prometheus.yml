@@ -22,6 +22,16 @@ scrape_configs:
           service: "redis"
           env: "docker"
 
+  # Java 业务服务指标采集（Spring Boot Actuator + Micrometer Prometheus）
+  # 依赖 pom.xml 中 micrometer-registry-prometheus 依赖和 actuator exposure 配置
+  - job_name: "aicoach_java_app"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["java-app:8080"]
+        labels:
+          service: "java-app"
+          env: "docker"
+
   # Prometheus 自身监控（可选，方便排查采集问题）
   - job_name: "prometheus"
     static_configs:

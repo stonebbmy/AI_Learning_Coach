@@ -117,6 +117,9 @@ services:
       - no_proxy=${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,redis,postgres,chroma,ai-service,java-app,openaipublic.blob.core.windows.net,api.deepseek.com,api.siliconflow.cn,172.16.0.0/12,172.18.0.0/16}
     networks:
       - ai-coach-net
+    # ai-service 不再对外暴露端口：所有外部访问统一经 Java BFF (:8080) 转发，消除双入口
+    # ports:
+    #   - "8000:8000"
     healthcheck:
       # ai-service 镜像也未必安装 curl，直接用 python 探活
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]

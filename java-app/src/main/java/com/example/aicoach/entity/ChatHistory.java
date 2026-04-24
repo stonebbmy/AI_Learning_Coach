@@ -16,6 +16,8 @@ public class ChatHistory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String userId;
+
     private String sessionId;
 
     @Column(columnDefinition = "TEXT")

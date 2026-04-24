@@ -21,6 +21,7 @@ AI Learning Coach — AI Service 主入口
 │  /api/chat/agent ReAct Agent（LangGraph）                │
 │  /api/plan       每日计划（LangGraph 状态机 + MCP）       │
 │  /api/eval       RAG 质量评估（LLM-as-Judge）             │
+│  /api/tutor      智能私教总控（意图分类+工具调度+SSE）     │
 │  /metrics        可观测性指标（JSON + Prometheus）        │
 │  /health         存活探针 / /health/detail 就绪探针       │
 └─────────────────────────────────────────────────────────┘
@@ -30,7 +31,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import outline, plan, chat, knowledge, chat_agent, multimodal
+from app.api import outline, plan, chat, knowledge, chat_agent, multimodal, tutor
 from app.api import metrics as metrics_router
 from app.evaluation import rag_evaluator
 from app.rag.vector_store import get_vector_store
@@ -137,6 +138,7 @@ app.include_router(multimodal.router, prefix="/api", tags=["3c. Multimodal (Opti
 app.include_router(plan.router, prefix="/api", tags=["4. Daily Plan (LangGraph + MCP)"])
 app.include_router(metrics_router.router, prefix="/api", tags=["5. Observability & Metrics"])
 app.include_router(rag_evaluator.router, prefix="/api", tags=["6. RAG Evaluation"])
+app.include_router(tutor.router, prefix="/api", tags=["7. Intelligent Tutor Orchestrator"])
 
 # ---------------------------------------------------------------------------
 # 健康检查

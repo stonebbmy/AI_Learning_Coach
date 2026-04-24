@@ -17,6 +17,8 @@ public class StudyOutline {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String userId;
+
     private String title;
 
     @Column(columnDefinition = "TEXT")

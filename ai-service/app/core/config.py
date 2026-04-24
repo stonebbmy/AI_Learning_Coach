@@ -195,6 +195,21 @@ class Settings:
     # session Token 计数窗口（秒），窗口结束后自动清零（与会话 TTL 一致）
     SESSION_TOKEN_WINDOW: int = int(os.getenv("SESSION_TOKEN_WINDOW", "3600"))
 
+    # --------------------------------------------------------------------------
+    # 智能私教（Tutor Orchestrator）Redis Key 设计
+    # --------------------------------------------------------------------------
+    # tutor:ctx:{user_id}  → Hash 存储用户学习状态（大纲/计划/进度/活跃主题）
+    # Key 格式: TUTOR_CTX_PREFIX + user_id
+    TUTOR_CTX_TTL_SECONDS: int = int(os.getenv("TUTOR_CTX_TTL_SECONDS", str(7 * 86400)))  # 7天
+    # tutor:session:{session_id} → 私教会话独立消息列表，TTL 1天
+    TUTOR_SESSION_TTL_SECONDS: int = int(os.getenv("TUTOR_SESSION_TTL_SECONDS", "86400"))
+    # 意图分类 LLM 超时（秒）
+    TUTOR_INTENT_TIMEOUT: float = float(os.getenv("TUTOR_INTENT_TIMEOUT", "8.0"))
+    # 私教编排整体超时（含工具并行）
+    TUTOR_ORCHESTRATION_TIMEOUT: float = float(os.getenv("TUTOR_ORCHESTRATION_TIMEOUT", "60.0"))
+    # 私教 LLM 合成流超时
+    TUTOR_SYNTHESIS_TIMEOUT: float = float(os.getenv("TUTOR_SYNTHESIS_TIMEOUT", "60.0"))
+
 # 创建一个全局可用的配置实例
 settings = Settings()
 
