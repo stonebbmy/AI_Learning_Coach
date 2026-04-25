@@ -271,6 +271,8 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin123
       - GF_AUTH_ANONYMOUS_ENABLED=false
+      # 允许在本地前端 (如 Vite) iframe 中嵌入 Grafana UI
+      - GF_SECURITY_ALLOW_EMBEDDING=true
       # 禁止 Grafana 向外发送遥测数据
       - GF_ANALYTICS_REPORTING_ENABLED=false
     volumes:

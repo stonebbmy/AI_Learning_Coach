@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import LearningModuleShell from '@/components/LearningModuleShell.vue'
 import {
   uploadKnowledge,
   fetchKnowledgeSummary,
@@ -122,18 +123,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
-    <h1>知识库</h1>
-    <p class="lead">
-      上传 Markdown 到向量库（<code>POST /api/knowledge/upload</code>），并查看已入库的源文件与文本块（只读预览）。
-    </p>
+  <LearningModuleShell>
+  <div class="view-knowledge">
+    <div class="view-hero">
+      <h1>知识库</h1>
+      <p class="lead">
+        上传 Markdown 到向量库（<code>POST /api/knowledge/upload</code>），并查看已入库的源文件与文本块（只读预览）。
+      </p>
+    </div>
 
     <section class="card">
-      <h2>上传</h2>
+      <h2 class="section-title">上传</h2>
       <label>选择 Markdown 文件</label>
-      <input type="file" accept=".md" @change="onFile" />
+      <div class="upload-zone">
+        <input type="file" accept=".md" @change="onFile" />
+      </div>
 
-      <div class="btn-row">
+      <div class="btn-row field-gap">
         <button type="button" :disabled="uploadLoading || !file" @click="onUpload">
           {{ uploadLoading ? '上传中…' : '上传到向量库' }}
         </button>
@@ -144,7 +150,7 @@ onMounted(() => {
 
     <section class="card">
       <div class="section-head">
-        <h2>已入库概览</h2>
+        <h2 class="section-title kb-head">已入库概览</h2>
         <button type="button" class="secondary" :disabled="summaryLoading" @click="loadSummary">
           {{ summaryLoading ? '刷新中…' : '刷新' }}
         </button>
@@ -185,7 +191,7 @@ onMounted(() => {
 
     <section class="card">
       <div class="section-head">
-        <h2>文本块（预览）</h2>
+        <h2 class="section-title kb-head">文本块（预览）</h2>
         <button
           v-if="summary && summary.total_chunks > 0"
           type="button"
@@ -212,11 +218,18 @@ onMounted(() => {
         </li>
       </ul>
 
-      <div v-if="chunks.length && chunksHasMore" class="btn-row">
+      <div v-if="chunks.length && chunksHasMore" class="btn-row field-gap">
         <button type="button" :disabled="chunksLoading" @click="loadMore">
           {{ chunksLoading ? '加载中…' : '加载更多' }}
         </button>
       </div>
     </section>
   </div>
+  </LearningModuleShell>
 </template>
+
+<style scoped>
+.kb-head {
+  margin: 0;
+}
+</style>

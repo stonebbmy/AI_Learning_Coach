@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -27,10 +28,12 @@ from langgraph.graph import END, StateGraph
 from ..core.config import settings
 from ..core.llm import ainvoke_with_retry, llm_for_structured
 from ..memory.conversation import load_session_messages
+from ..memory.context_manager import assemble_context
 from ..models.tutor_schemas import IntentResult, TutorState
 from .tutor_tools import (
     load_tutor_context,
     save_tutor_context,
+    tool_generate_outline,
     tool_generate_quiz,
     tool_rag_answer,
     tool_search_knowledge,
@@ -43,7 +46,7 @@ _logger = logging.getLogger(__name__)
 
 # ── 意图 → 工具映射 ──────────────────────────────────────────────────────────
 _INTENT_TOOLS: Dict[str, List[str]] = {
-    "ONBOARD":  ["search_knowledge"],
+    "ONBOARD":  ["search_knowledge", "generate_outline"],  # 首次入学：检索参考 + 生成大纲
     "PLAN":     ["search_knowledge"],
     "LEARN":    ["search_knowledge", "rag_answer", "web_research"],
     "REVIEW":   ["search_knowledge", "spaced_review"],
@@ -54,6 +57,47 @@ _INTENT_TOOLS: Dict[str, List[str]] = {
 
 # 意图分类超时（秒）— 使用 config，环境变量可覆盖
 _INTENT_TIMEOUT = settings.TUTOR_INTENT_TIMEOUT
+
+# 分类失败时：若用户明显在「新建学习方向」，优先降级为 ONBOARD 而非 LEARN
+_ONBOARD_HINT = re.compile(
+    r"想学|想学习|学一下|新学|入门|从零|学习目标|"
+    r"学\s*(Python|Java|英语|日语|AI|人工智能)|"
+    r"如何学|怎么学|准备学",
+    re.IGNORECASE,
+)
+
+
+def _heuristic_onboard(user_message: str) -> bool:
+    s = (user_message or "").strip()
+    if not s or len(s) > 500:
+        return False
+    return bool(_ONBOARD_HINT.search(s))
+
+
+def _merge_sub_tasks_with_intent(intent: str, sub_tasks: Optional[List[str]]) -> List[str]:
+    """
+    将 LLM 返回的 sub_tasks 与 _INTENT_TOOLS 合并，避免模型漏写 generate_outline / generate_quiz。
+    ONBOARD / QUIZ 以映射表为基准去重并保留顺序。
+    """
+    base = list(_INTENT_TOOLS.get(intent, []))
+    extra = [t for t in (sub_tasks or []) if t and t not in base]
+    if intent in ("ONBOARD", "QUIZ"):
+        seen = set()
+        out: List[str] = []
+        for t in base + extra:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+        return out
+    if not sub_tasks:
+        return base
+    seen2 = set()
+    out2: List[str] = []
+    for t in sub_tasks + base:
+        if t and t not in seen2:
+            seen2.add(t)
+            out2.append(t)
+    return out2
 
 # ---------------------------------------------------------------------------
 # 节点 1：加载用户上下文
@@ -71,6 +115,11 @@ async def _load_context(state: TutorState) -> TutorState:
     # 从 Redis 读取 Tutor 持久化状态
     ctx = load_tutor_context(user_id)
 
+    user_message = state.get("user_message", "")
+
+    # 三层上下文组装（滚动摘要 + 长期记忆 + 近期窗口），token 感知
+    rich_history = await assemble_context(session_id, user_message)
+
     updates: TutorState = {
         "current_outline_id": ctx.get("current_outline_id"),
         "current_plan_id": ctx.get("current_plan_id"),
@@ -78,16 +127,17 @@ async def _load_context(state: TutorState) -> TutorState:
         "progress_rate": float(ctx.get("progress_rate", 0.0)),
         "outline_chapters": ctx.get("outline_chapters", []),
         "plan_tasks": ctx.get("plan_tasks", []),
-        # 短期对话记忆（最近 N 轮）
+        # 三层结构化历史（用于意图分类和合成 prompt）
         "chat_history": load_session_messages(session_id),
+        "rich_history": rich_history,
     }
 
     _logger.info(
-        "[Tutor] load_context user=%s outline_id=%s plan_id=%s history_len=%d",
+        "[Tutor] load_context user=%s outline_id=%s plan_id=%s history_tokens=%d",
         user_id,
         updates.get("current_outline_id"),
         updates.get("current_plan_id"),
-        len(updates["chat_history"]),
+        len(rich_history),
     )
     return {**state, **updates}
 
@@ -107,9 +157,18 @@ _INTENT_SYSTEM = """你是一个意图分类器，专门分析用户在 AI 学�
 - QUIZ     : 主动要求测验、"考考我"、"出几道题"
 - EXPLORE  : 探索超出当前大纲的新话题、比较两个技术方案、"xxx和yyy的区别"
 
-根据用户消息和上下文，选择最匹配的一个意图，并列出需要调用的工具。
+根据用户消息和上下文，选择最匹配的一个意图，并列出需要调用的工具（须与下表一致）。
 
-工具列表：search_knowledge / rag_answer / web_research / spaced_review / generate_quiz
+工具列表与典型组合：
+- search_knowledge  : 从用户个人知识库检索
+- generate_outline  : 生成结构化学习大纲（仅 ONBOARD 意图必须包含，与 search_knowledge 搭配）
+- rag_answer        : RAG 深度问答
+- web_research      : 联网摘要
+- spaced_review     : 间隔复习
+- generate_quiz     : 生成测验题（仅 QUIZ 意图必须包含）
+
+重要：当 intent 为 ONBOARD 时，sub_tasks 必须同时包含 "search_knowledge" 和 "generate_outline"。
+当 intent 为 QUIZ 时，sub_tasks 应包含 "search_knowledge" 与 "generate_quiz"（可含其他）。
 
 只输出 JSON，格式：{"intent": "...", "sub_tasks": [...], "reason": "..."}"""
 
@@ -151,15 +210,30 @@ async def _classify_intent(state: TutorState) -> TutorState:
                 text = text[4:]
         parsed = json.loads(text)
         intent = parsed.get("intent", "LEARN").upper()
-        sub_tasks = parsed.get("sub_tasks", _INTENT_TOOLS.get(intent, []))
+        if intent not in _INTENT_TOOLS:
+            intent = "LEARN"
+        sub_tasks = parsed.get("sub_tasks")
+        if not sub_tasks:
+            sub_tasks = _INTENT_TOOLS.get(intent, [])
+        sub_tasks = _merge_sub_tasks_with_intent(intent, sub_tasks)
         reason = parsed.get("reason", "")
+        # 分类器偶发把「想学 XXX」标成 LEARN，用关键词纠偏为 ONBOARD
+        if intent == "LEARN" and _heuristic_onboard(user_message):
+            intent = "ONBOARD"
+            sub_tasks = _merge_sub_tasks_with_intent("ONBOARD", sub_tasks)
+            reason = f"{reason} [纠偏:ONBOARD]"
     except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
-        _logger.warning("[Tutor] classify_intent fallback to LEARN: %s", e)
-        intent = "LEARN"
-        sub_tasks = _INTENT_TOOLS["LEARN"]
-        reason = "分类失败，降级为 LEARN"
+        _logger.warning("[Tutor] classify_intent parse failed: %s", e)
+        msg = state.get("user_message", "")
+        if _heuristic_onboard(msg):
+            intent = "ONBOARD"
+            sub_tasks = _merge_sub_tasks_with_intent("ONBOARD", _INTENT_TOOLS["ONBOARD"])
+            reason = "分类失败，按中文关键词降级为 ONBOARD"
+        else:
+            intent = "LEARN"
+            sub_tasks = _INTENT_TOOLS["LEARN"]
+            reason = "分类失败，降级为 LEARN"
 
-    # 用映射表确保工具列表合理
     if not sub_tasks:
         sub_tasks = _INTENT_TOOLS.get(intent, [])
 
@@ -193,17 +267,22 @@ async def _dispatch_tools(state: TutorState) -> TutorState:
         "progress_summary": {},
         "quiz_questions": [],
         "review_items": "",
+        "generated_outline": None,
         "tutor_actions": [],
     }
     actions: List[str] = []
 
-    # 构造历史 block（供 RAG 使用）
-    history_block = ""
-    if chat_history:
+    # 构造历史 block（供 RAG 使用，优先用三层历史）
+    rich_history = state.get("rich_history", "")
+    if rich_history:
+        history_block = rich_history[:1500]
+    elif chat_history:
         recent = chat_history[-6:]
         history_block = "\n".join(
             f"{m.get('role','?')}: {m.get('content','')[:150]}" for m in recent
         )
+    else:
+        history_block = ""
 
     # ── 并行执行工具集 ────────────────────────────────────────────────────────
 
@@ -248,14 +327,27 @@ async def _dispatch_tools(state: TutorState) -> TutorState:
             updates["quiz_questions"] = questions
             actions.append("📝 生成测验题")
 
+    async def run_generate_outline():
+        if "generate_outline" not in sub_tasks:
+            return
+        context = updates.get("notes_context", "")
+        outline = await tool_generate_outline(user_message, context)
+        if outline:
+            updates["generated_outline"] = outline
+            actions.append("📋 生成学习大纲")
+
     # 并行执行所有工具（相互独立）
     await asyncio.gather(
         run_search_knowledge(),
         run_rag_answer(),
         run_web_research(),
         run_spaced_review(),
-        return_exceptions=True,  # 单个工具失败不影响整体
+        return_exceptions=True,
     )
+
+    # outline 依赖 search_knowledge 结果（提供参考），串行
+    if "generate_outline" in sub_tasks:
+        await run_generate_outline()
 
     # quiz 依赖 search_knowledge 结果，需串行（但已有超时兜底）
     if "generate_quiz" in sub_tasks:
@@ -270,7 +362,14 @@ async def _dispatch_tools(state: TutorState) -> TutorState:
                 actions.append("📊 读取学习进度")
 
     updates["tutor_actions"] = actions
-    _logger.info("[Tutor] dispatch_tools actions=%s", actions)
+    has_outline = bool(updates.get("generated_outline"))
+    _logger.info(
+        "[Tutor] dispatch_tools user=%s intent=%s actions=%s generated_outline=%s",
+        state.get("user_id"),
+        intent,
+        actions,
+        "yes" if has_outline else "no",
+    )
     return {**state, **updates}
 
 
@@ -309,11 +408,25 @@ async def _build_synthesis(state: TutorState) -> TutorState:
     review_items = state.get("review_items", "")
     progress_summary = state.get("progress_summary", {})
 
+    # 优先使用三层历史（rich_history），降级到近期 chat_history
+    rich_history = state.get("rich_history", "")
+    chat_history = state.get("chat_history", [])
+
     # 构造上下文块
     context_parts: List[str] = [
         f"【学习意图】{intent}",
         f"【用户消息】{user_message}",
     ]
+
+    if rich_history:
+        context_parts.append(f"【对话历史】\n{rich_history[:2000]}")
+    elif chat_history:
+        recent_block = "\n".join(
+            f"{m.get('role','?')}: {m.get('content','')[:200]}"
+            for m in chat_history[-4:]
+        )
+        if recent_block:
+            context_parts.append(f"【近期对话】\n{recent_block}")
 
     if active_topic:
         context_parts.append(f"【当前主题】{active_topic}")
@@ -346,6 +459,10 @@ async def _build_synthesis(state: TutorState) -> TutorState:
         knowledge_parts.append(f"=== 联网检索结果 ===\n{web_context[:1500]}")
     if review_items:
         knowledge_parts.append(f"=== 复习内容 ===\n{review_items[:1500]}")
+    generated_outline = state.get("generated_outline")
+    if generated_outline:
+        outline_summary = f"标题：{generated_outline.get('title','')}\n章节数：{len(generated_outline.get('chapters',[]))}\n预计天数：{generated_outline.get('estimated_days',0)}"
+        knowledge_parts.append(f"=== 已为用户生成学习大纲（请告知用户并鼓励开始学习）===\n{outline_summary}")
     if quiz_questions:
         quiz_text = json.dumps(quiz_questions[:3], ensure_ascii=False, indent=2)
         knowledge_parts.append(f"=== 已生成测验题（请向用户呈现）===\n{quiz_text}")

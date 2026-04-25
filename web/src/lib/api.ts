@@ -75,6 +75,29 @@ export async function confirmOutline(body: ReturnType<typeof toOutlineConfirmBod
   return r.json()
 }
 
+/** 后端已确认并持久化的大纲（Java 序列化为 camelCase） */
+export interface StudyOutlineListItem {
+  id: number
+  userId?: string
+  title: string
+  overview: string
+  chapters?: {
+    id?: number
+    chapterTitle: string
+    description?: string
+    keyPoints?: string[]
+  }[]
+}
+
+export async function fetchOutlineList(): Promise<StudyOutlineListItem[]> {
+  const r = await fetch(`${javaBase}/api/outline/list`, { headers: authHeaders() })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
+  return r.json() as Promise<StudyOutlineListItem[]>
+}
+
 export async function uploadKnowledge(file: File): Promise<{ success: boolean; message: string }> {
   const fd = new FormData()
   fd.append('file', file)
@@ -160,37 +183,97 @@ export interface TaskItem {
 export interface DailyPlanResponse {
   plan_title: string
   tasks: TaskItem[]
+  id?: number
+  /** 生成时使用的已确认大纲 ID，可与当前选中大纲对账 */
+  source_outline_id?: number | null
+  /** 生成时使用的目标原文 */
+  source_goal?: string | null
 }
 
+/** 后端 404：今日尚未生成计划且 goal 为空、不应调 AI 时 */
+export class NoTodayPlanError extends Error {
+  readonly isNoTodayPlan = true
+  constructor() {
+    super('今日尚无计划')
+    this.name = 'NoTodayPlanError'
+  }
+}
+
+export function isNoTodayPlanError(e: unknown): e is NoTodayPlanError {
+  return e instanceof NoTodayPlanError
+}
+
+/**
+ * 今日计划。`goal` 可空：有当日行时只读；无行且无内容则返回 404（抛 NoTodayPlanError）。
+ */
 export async function getTodayPlan(
-  goal: string,
+  goal: string = '',
   outlineId?: number | null,
-): Promise<DailyPlanResponse & { id?: number }> {
-  const q = new URLSearchParams({ goal })
+  options?: { regenerate?: boolean },
+): Promise<DailyPlanResponse> {
+  const q = new URLSearchParams()
+  q.set('goal', goal)
   if (outlineId) q.set('outlineId', String(outlineId))
+  if (options?.regenerate) q.set('regenerate', 'true')
   const r = await fetch(`${javaBase}/api/plan/today?${q.toString()}`, {
+    headers: authHeaders(),
+  })
+  if (r.status === 404) {
+    throw new NoTodayPlanError()
+  }
+  if (!r.ok) {
+    const t = await r.text()
+    const err = new Error(t || `服务暂时不可用 (HTTP ${r.status})`) as Error & { status?: number }
+    err.status = r.status
+    throw err
+  }
+  const data = (await r.json()) as Record<string, unknown>
+  return normalizePlan(data)
+}
+
+export async function deleteTodayPlanApi(): Promise<void> {
+  const r = await fetch(`${javaBase}/api/plan/today`, {
+    method: 'DELETE',
     headers: authHeaders(),
   })
   if (!r.ok) {
     const t = await r.text()
     throw new Error(t || `HTTP ${r.status}`)
   }
-  const data = (await r.json()) as Record<string, unknown>
-  return normalizePlan(data) as DailyPlanResponse & { id?: number }
+}
+
+export async function deleteOutlineApi(outlineId: number): Promise<void> {
+  const r = await fetch(`${javaBase}/api/outline/${outlineId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(t || `HTTP ${r.status}`)
+  }
 }
 
 /** 解析 Spring/Java 返回的 camelCase（若后端统一为 snake 也可兼容） */
-export function normalizePlan(data: Record<string, unknown>): DailyPlanResponse & { id?: number } {
+export function normalizePlan(data: Record<string, unknown>): DailyPlanResponse {
   const planTitle = (data.planTitle ?? data.plan_title) as string
   const rawTasks = (data.tasks ?? []) as Record<string, unknown>[]
   const tasks = rawTasks.map((t) => ({
-    task_id: Number(t.taskId ?? t.task_id ?? t.id),
-    db_id: Number(t.id ?? 0),
+    task_id: Number(t.taskId ?? t.task_id),
+    db_id: Number(t.id ?? t.db_id ?? 0) || undefined,
     description: String(t.description ?? ''),
     estimated_time: String(t.estimatedTime ?? t.estimated_time ?? ''),
     status: String(t.status ?? ''),
   }))
-  return { id: data.id as number | undefined, plan_title: planTitle, tasks }
+  const so =
+    (data.sourceOutlineId ?? data.source_outline_id) as number | null | undefined
+  const sg = (data.sourceGoal ?? data.source_goal) as string | null | undefined
+  return {
+    id: data.id as number | undefined,
+    plan_title: planTitle,
+    tasks,
+    source_outline_id: so == null || Number.isNaN(Number(so)) ? null : Number(so),
+    source_goal: sg ?? null,
+  }
 }
 
 function extractSseDataPayload(raw: string): string | null {
@@ -434,12 +517,22 @@ export async function updateTaskStatus(taskId: number, status: string): Promise<
   }
 }
 
+export interface DailyPlanStat {
+  planId?: number
+  planDate: string
+  planTitle: string
+  done: number
+  total: number
+  completionRate: number
+  tasks?: { id: number; description: string; status: string; done: boolean }[]
+}
+
 export interface ProgressSummary {
   userId: string
   totalTasks: number
   doneTasks: number
   completionRate: number
-  chapterStats: { chapter: string; total: number; done: number }[]
+  dailyStats: DailyPlanStat[]
 }
 
 /** 获取学习进度汇总 */
@@ -453,9 +546,15 @@ export async function fetchProgressSummary(): Promise<ProgressSummary> {
 // 智能私教总控层
 // ---------------------------------------------------------------------------
 
+export interface TutorCardPayload {
+  type: 'outline' | 'plan' | 'quiz'
+  payload: Record<string, unknown>
+}
+
 export interface TutorSseCallbacks {
   onIntent?: (intent: string) => void
   onActions?: (actions: string[]) => void
+  onCard?: (card: TutorCardPayload) => void
   onChunk: (text: string) => void
   onEnd?: () => void
   onError?: (msg: string) => void
@@ -519,12 +618,16 @@ export async function streamTutorChat(
             const arr = JSON.parse(payload) as string[]
             callbacks.onActions?.(arr)
           } catch { /* ignore */ }
+        } else if (currentEvent === 'card') {
+          try {
+            const card = JSON.parse(payload) as TutorCardPayload
+            callbacks.onCard?.(card)
+          } catch { /* ignore */ }
         } else if (currentEvent === 'end') {
           callbacks.onEnd?.()
         } else if (currentEvent === 'error') {
           callbacks.onError?.(payload)
         } else {
-          // 普通正文 chunk（可能是 plain text 或 JSON 字符串）
           let text = payload
           try {
             const parsed = JSON.parse(payload) as unknown
@@ -545,6 +648,22 @@ export interface TutorContextPayload {
   progressRate?: number
   outlineChapters?: string[]
   planTasks?: { description: string; status: string }[]
+}
+
+export interface TutorHistoryResponse {
+  session_id: string
+  messages: { role: string; content: string }[]
+  count: number
+}
+
+/** 拉取会话历史记录（前端挂载时恢复对话） */
+export async function fetchTutorHistory(sessionId: string, limit = 20): Promise<TutorHistoryResponse> {
+  const r = await fetch(
+    `${javaBase}/api/tutor/history/${encodeURIComponent(sessionId)}?limit=${limit}`,
+    { headers: authHeaders() },
+  )
+  if (!r.ok) return { session_id: sessionId, messages: [], count: 0 }
+  return r.json() as Promise<TutorHistoryResponse>
 }
 
 /** 同步私教上下文（切换大纲/计划后调用） */

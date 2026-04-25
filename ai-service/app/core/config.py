@@ -122,7 +122,16 @@ class Settings:
     SEMANTIC_CACHE_MAX_DISTANCE: float = float(os.getenv("SEMANTIC_CACHE_MAX_DISTANCE", "0.42"))
 
     SESSION_MEMORY_COLLECTION: str = os.getenv("SESSION_MEMORY_COLLECTION", "session_long_memory")
-    LONG_MEMORY_ENABLED: bool = os.getenv("LONG_MEMORY_ENABLED", "false").lower() in ("1", "true", "yes")
+    LONG_MEMORY_ENABLED: bool = os.getenv("LONG_MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
+
+    # --------------------------------------------------------------------------
+    # 分层上下文管理（Context Manager）
+    # --------------------------------------------------------------------------
+    # 每次请求历史上下文的总 Token 预算（三层合计不超过此值）
+    CONTEXT_MAX_TOKENS: int = int(os.getenv("CONTEXT_MAX_TOKENS", "3500"))
+    # 触发滚动摘要压缩的消息条数阈值（user+assistant 各算 1 条）
+    # 当 Redis List 长度 >= SUMMARIZE_THRESHOLD * 2 时触发
+    SUMMARIZE_THRESHOLD: int = int(os.getenv("SUMMARIZE_THRESHOLD", "20"))
 
     # --------------------------------------------------------------------------
     # Langfuse 可观测性（可选；未配置 key 时自动跳过）

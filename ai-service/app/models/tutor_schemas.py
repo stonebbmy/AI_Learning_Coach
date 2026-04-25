@@ -43,6 +43,12 @@ class TutorState(TypedDict, total=False):
     quiz_questions: List[Dict[str, Any]]  # 生成的测验题
     review_items: str        # 间隔复习内容
 
+    # ── 三层历史上下文（load_context 节点填充）──────────────────────────────
+    rich_history: str        # 分层组装的历史 block（摘要+长期记忆+近期窗口）
+
+    # ── ONBOARD 工具结果（dispatch_tools 节点填充）──────────────────────────
+    generated_outline: Optional[dict]  # ONBOARD 意图生成的大纲数据（供前端卡片展示）
+
     # ── 合成输出（build_synthesis 节点填充）─────────────────────────────────
     synthesis_prompt: str    # 传给最终 LLM 的合成 Prompt
     tutor_actions: List[str] # 执行了哪些动作（前端展示用）

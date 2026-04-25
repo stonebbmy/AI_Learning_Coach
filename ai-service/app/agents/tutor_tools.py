@@ -30,6 +30,7 @@ _WEB_TIMEOUT = 20.0
 _QUIZ_TIMEOUT = 25.0
 _REVIEW_TIMEOUT = 15.0
 _LLM_TIMEOUT = 30.0
+_OUTLINE_TIMEOUT = 40.0
 
 
 # ---------------------------------------------------------------------------
@@ -91,11 +92,13 @@ async def tool_search_knowledge(query: str, user_id: str = "anonymous") -> str:
 # ---------------------------------------------------------------------------
 
 async def tool_web_research(query: str) -> str:
-    """通过 MCP 适配器进行联网信息检索（降级友好）。"""
+    """通过 MCP 适配器进行联网信息检索（降级友好）。
+    注意：web_research 本身是 async def，必须直接 await，不能用 asyncio.to_thread。
+    """
     try:
         from ..tools.mcp_adapter import web_research
         result = await asyncio.wait_for(
-            asyncio.to_thread(web_research, query),
+            web_research(query),   # async 函数直接 await，不走线程池
             timeout=_WEB_TIMEOUT,
         )
         return result or ""
@@ -219,7 +222,72 @@ async def tool_get_plan_context(
 
 
 # ---------------------------------------------------------------------------
-# 工具 7：Redis 中获取 Tutor 上下文状态
+# 工具 7：一键生成学习大纲（ONBOARD 意图专用）
+# ---------------------------------------------------------------------------
+
+_OUTLINE_SYSTEM = """你是一个专业的学习规划师。根据用户提供的学习目标，为其生成一份结构化的学习大纲。
+
+输出格式为 JSON 对象，包含以下字段：
+{
+  "title": "大纲标题",
+  "goal": "学习目标描述",
+  "estimated_days": 总天数（整数）,
+  "chapters": [
+    {
+      "order": 章节序号（整数）,
+      "title": "章节标题",
+      "description": "章节内容简介（1-2句）",
+      "estimated_hours": 预计学习小时数（整数）,
+      "key_concepts": ["核心概念1", "核心概念2"]
+    }
+  ]
+}
+
+要求：
+- 章节数量 4-8 个，由浅入深
+- 每章有明确的学习目标和核心概念
+- 时间安排合理（总计 20-60 天）
+- 只输出 JSON，不要额外文字"""
+
+
+async def tool_generate_outline(goal: str, context: str = "") -> Optional[Dict[str, Any]]:
+    """
+    根据用户学习目标生成结构化学习大纲（ONBOARD 意图触发）。
+    返回大纲 dict，前端将渲染为 OutlineCard。
+    """
+    if not goal:
+        return None
+    try:
+        user_input = f"学习目标：{goal}"
+        if context:
+            user_input += f"\n\n参考信息：{context[:1000]}"
+        messages = [
+            SystemMessage(content=_OUTLINE_SYSTEM),
+            HumanMessage(content=user_input),
+        ]
+        resp = await asyncio.wait_for(
+            llm_for_structured.ainvoke(messages),
+            timeout=_OUTLINE_TIMEOUT,
+        )
+        text = (resp.content or "").strip()
+        if "```" in text:
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        outline = json.loads(text)
+        if isinstance(outline, dict) and "chapters" in outline:
+            return outline
+        return None
+    except asyncio.TimeoutError:
+        _logger.warning("[TutorTool] generate_outline timeout")
+        return None
+    except (json.JSONDecodeError, Exception) as e:
+        _logger.warning("[TutorTool] generate_outline error: %s", e)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 工具 8：Redis 中获取 Tutor 上下文状态
 # ---------------------------------------------------------------------------
 
 def load_tutor_context(user_id: str) -> Dict[str, Any]:

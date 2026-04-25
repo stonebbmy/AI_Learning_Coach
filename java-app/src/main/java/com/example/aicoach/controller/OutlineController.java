@@ -7,6 +7,7 @@ import com.example.aicoach.entity.StudyChapter;
 import com.example.aicoach.entity.StudyOutline;
 import com.example.aicoach.filter.UserContextHolder;
 import com.example.aicoach.repository.StudyOutlineRepository;
+import com.example.aicoach.service.OutlineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 public class OutlineController {
 
     private final StudyOutlineRepository outlineRepository;
+    private final OutlineService outlineService;
 
     @PostMapping("/confirm")
     @Transactional
@@ -44,6 +46,14 @@ public class OutlineController {
                 .filter(o -> userId.equals(o.getUserId()))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(outlines);
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    @Operation(summary = "删除已保存的大纲", description = "仅本人可删；历史日计划的 source_outline_id 会置为 null，不删历史任务行。")
+    public ResponseEntity<Void> deleteOutline(@PathVariable Long id) {
+        outlineService.deleteOutlineForUser(id, UserContextHolder.get());
+        return ResponseEntity.noContent().build();
     }
 
     private StudyOutline convertToEntity(OutlineConfirmationRequest dto) {

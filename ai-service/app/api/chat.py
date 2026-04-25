@@ -41,6 +41,7 @@ from ..cache.chat_cache import (
 )
 from ..memory.conversation import append_session_message, load_session_messages
 from ..memory.long_term import index_qa_turn, retrieve_long_memory_context
+from ..memory.context_manager import assemble_context, maybe_summarize_session
 from ..prompts.yaml_loader import format_history_block
 from ..observability.tracing import build_langfuse_callbacks, structured_log, timer_ms
 from ..utils.token_counter import count_tokens
@@ -110,20 +111,16 @@ def _record_session_tokens(session_id: str, tokens: int) -> None:
 # 历史消息合并
 # ---------------------------------------------------------------------------
 
-def _merge_messages_for_prompt(request: ChatRequest) -> str:
+async def _merge_messages_for_prompt(request: ChatRequest) -> str:
     """
-    优先使用客户端显式传入的 messages；否则从 Redis 读取会话窗口。
-    若请求携带 plan_context，将其追加在 system 前缀，引导 LLM 聚焦今日任务。
+    优先使用客户端显式传入的 messages（多轮前端传参）；
+    否则使用三层上下文管理器（滚动摘要 + 长期记忆 + 近期窗口）。
     """
     if request.messages:
         merged = [{"role": m.role, "content": m.content} for m in request.messages]
-    else:
-        merged = load_session_messages(request.session_id)
-    hb = format_history_block(merged)
-    lm = retrieve_long_memory_context(request.session_id, request.question)
-    if lm:
-        hb = (hb + "\n【长期记忆检索】\n" + lm).strip()
-    return hb
+        return format_history_block(merged)
+    # 使用分层上下文组装（token 感知，含滚动摘要 + 长期记忆）
+    return await assemble_context(request.session_id, request.question)
 
 
 def _build_system_prefix(request: ChatRequest) -> str:
@@ -189,7 +186,7 @@ async def chat_with_rag(request: ChatRequest):
 
     print(f"[chat] session={request.session_id} user={request.user_id} question='{request.question[:50]}'")
     qa_chain = get_qa_chain()
-    history_block = _merge_messages_for_prompt(request)
+    history_block = await _merge_messages_for_prompt(request)
     system_prefix = _build_system_prefix(request)
 
     # --- Step 3: 双层缓存短路（含 plan_context 时跳过缓存，保证答案与当日计划一致）---
@@ -271,6 +268,8 @@ async def chat_with_rag(request: ChatRequest):
             set_exact_cached_answer(request.question, text)
             add_semantic_cache_entry(request.question, text)
             index_qa_turn(request.session_id, request.question, text)
+            # 异步触发滚动摘要（不阻塞响应）
+            asyncio.create_task(maybe_summarize_session(request.session_id))
 
         except Exception as e:
             print(f"[chat] stream error: {e}")

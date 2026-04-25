@@ -19,4 +19,10 @@ public class DailyPlanResponse {
     private String planTitle;
 
     private List<TaskDto> tasks;
+
+    @JsonProperty("source_outline_id")
+    private Long sourceOutlineId;
+
+    @JsonProperty("source_goal")
+    private String sourceGoal;
 }

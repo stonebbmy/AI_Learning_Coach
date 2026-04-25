@@ -61,12 +61,25 @@ public class ProgressService {
             totalTasks += planTotal;
             doneTasks += planDone;
 
+            List<Map<String, Object>> taskRows = new ArrayList<>();
+            for (Task t : tasks) {
+                boolean done = "已完成".equals(t.getStatus()) || "DONE".equalsIgnoreCase(t.getStatus());
+                Map<String, Object> tr = new LinkedHashMap<>();
+                tr.put("id", t.getId());
+                tr.put("description", t.getDescription());
+                tr.put("status", t.getStatus());
+                tr.put("done", done);
+                taskRows.add(tr);
+            }
+
             Map<String, Object> stat = new LinkedHashMap<>();
+            stat.put("planId", plan.getId());
             stat.put("planDate", plan.getPlanDate().toString());
             stat.put("planTitle", plan.getPlanTitle());
             stat.put("total", planTotal);
             stat.put("done", planDone);
             stat.put("completionRate", planTotal == 0 ? 0.0 : (double) planDone / planTotal);
+            stat.put("tasks", taskRows);
             dailyStats.add(stat);
         }
 

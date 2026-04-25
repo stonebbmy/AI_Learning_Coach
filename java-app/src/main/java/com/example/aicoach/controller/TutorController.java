@@ -8,8 +8,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -60,7 +62,7 @@ public class TutorController {
             summary = "智能私教对话（SSE 流式）",
             description = "发送自然语言，AI 自动理解意图，调度工具，流式返回个性化私教回复"
     )
-    public Flux<String> tutorChat(@RequestBody TutorChatRequest request) {
+    public Flux<ServerSentEvent<String>> tutorChat(@RequestBody TutorChatRequest request) {
         String userId = UserContextHolder.get();
         request.setUserId(userId);
 
@@ -73,13 +75,20 @@ public class TutorController {
                 request.getQuestion() != null ? request.getQuestion().substring(
                         0, Math.min(50, request.getQuestion().length())) : "");
 
+        // 使用 ServerSentEvent<String> 完整保留 event 字段（intent / actions / card / end / error）。
+        // 若用 bodyToFlux(String.class)，Spring 的 SSE 解码器只返回 data 值，event 类型全部丢失，
+        // 导致前端永远收不到 event:end，isStreaming 无法重置，Markdown 格式无法渲染。
         return webClient.post()
                 .uri("/tutor/chat")
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(request)
                 .retrieve()
-                .bodyToFlux(String.class)
+                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
+                .map(sse -> ServerSentEvent.<String>builder()
+                        .event(sse.event())
+                        .data(sse.data() != null ? sse.data() : "")
+                        .build())
                 .doOnError(e -> log.error("[Tutor] stream error user={}: {}", userId, e.getMessage()))
                 .doOnComplete(() -> log.info("[Tutor] stream complete user={} session={}", userId, request.getSessionId()));
     }
@@ -128,5 +137,33 @@ public class TutorController {
                 .onErrorResume(e -> Mono.just(
                         ResponseEntity.ok((Object) java.util.Map.of("user_id", userId, "context", java.util.Map.of()))
                 ));
+    }
+
+    /**
+     * 获取会话历史记录（前端挂载时用于恢复对话窗口）。
+     */
+    @GetMapping("/history/{sessionId}")
+    @Operation(
+            summary = "获取会话历史",
+            description = "读取 Redis 中的对话记录，用于前端刷新后恢复聊天界面"
+    )
+    public Mono<ResponseEntity<Object>> getHistory(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "20") int limit) {
+        log.info("[Tutor] getHistory session={} limit={}", sessionId, limit);
+        return webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/tutor/history/{sessionId}")
+                        .queryParam("limit", limit)
+                        .build(sessionId))
+                .retrieve()
+                .bodyToMono(Object.class)
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("[Tutor] getHistory error session={}: {}", sessionId, e.getMessage());
+                    return Mono.just(ResponseEntity.ok(
+                            (Object) java.util.Map.of("session_id", sessionId, "messages", java.util.List.of(), "count", 0)
+                    ));
+                });
     }
 }

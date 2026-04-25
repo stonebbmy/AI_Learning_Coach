@@ -1,4 +1,3 @@
-
 package com.example.aicoach.service;
 
 import com.example.aicoach.dto.DailyPlanRequest;
@@ -8,19 +7,18 @@ import com.example.aicoach.entity.DailyPlan;
 import com.example.aicoach.entity.StudyChapter;
 import com.example.aicoach.entity.StudyOutline;
 import com.example.aicoach.entity.Task;
-import com.example.aicoach.feign.AiServiceClient;
+import com.example.aicoach.exception.NoTodayPlanException;
 import com.example.aicoach.repository.DailyPlanRepository;
 import com.example.aicoach.repository.StudyOutlineRepository;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -28,46 +26,95 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PlanService {
 
-    private final AiServiceClient aiServiceClient;
+    private final AiDailyPlanClient aiDailyPlanClient;
     private final DailyPlanRepository dailyPlanRepository;
     private final StudyOutlineRepository studyOutlineRepository;
 
     /**
-     * 获取今日计划。优先从缓存/数据库获取，否则通过 AI 服务生成。
-     * 若传入 outlineId，则从数据库读取大纲章节并注入计划请求，实现 Outline→Plan 数据流。
-     *
-     * @param goal      今天的学习目标
-     * @param userId    用户 ID（来自 UserContextHolder）
-     * @param outlineId 可选：已确认大纲的 ID
+     * <ul>
+     *   <li>regenerate=true：删当日行后按参数调 AI 生成</li>
+     *   <li>regenerate=false 且已有当日行、且请求 goal 为空：直接读档（不调 AI）</li>
+     *   <li>regenerate=false 且已有当日行、且 goal 非空：对账一致则直返，否则删后重算</li>
+     *   <li>regenerate=false 且无当日行、且 goal 空：抛 {@link NoTodayPlanException}</li>
+     *   <li>无当日行、goal 非空：调 AI 并落库</li>
+     * </ul>
      */
-    @Cacheable(value = "dailyPlan", key = "#userId + ':' + T(java.time.LocalDate).now().toString()")
-    @CircuitBreaker(name = "ai-service", fallbackMethod = "getDailyPlanFallback")
     @Transactional
-    public DailyPlanResponse getTodayPlan(String goal, String userId, Long outlineId) {
+    public DailyPlanResponse getTodayPlan(String goal, String userId, Long outlineId, boolean regenerate) {
         LocalDate today = LocalDate.now();
+        String normGoal = normalizeGoal(goal);
+
+        if (regenerate) {
+            log.info("regenerate=true，删除 userId={} 当日计划后重算", userId);
+            deleteTodayPlanIfExists(userId, today);
+            return generateAndSave(normGoal, userId, outlineId, today);
+        }
 
         return dailyPlanRepository.findByPlanDateAndUserId(today, userId)
                 .map(plan -> {
-                    log.info("从数据库中获取到 userId={} 今天的计划。", userId);
-                    return convertToDto(plan);
+                    if (normGoal.isEmpty()) {
+                        log.info("goal 为空，直返当日计划 userId={} planId={}", userId, plan.getId());
+                        return convertToDto(plan);
+                    }
+                    if (requestMatchesStoredPlan(plan, outlineId, normGoal)) {
+                        log.info("今日计划与请求一致，直接返回 userId={} planId={}", userId, plan.getId());
+                        return convertToDto(plan);
+                    }
+                    log.info("今日计划与请求不一致，删除后重新生成 userId={} planId={}", userId, plan.getId());
+                    dailyPlanRepository.delete(plan);
+                    return generateAndSave(normGoal, userId, outlineId, today);
                 })
                 .orElseGet(() -> {
-                    log.info("数据库中没有 userId={} 今天的计划，调用 AI 服务生成新计划。", userId);
-                    List<String> chapters = resolveChapters(outlineId);
-                    DailyPlanRequest req = new DailyPlanRequest(goal, userId, chapters.isEmpty() ? null : chapters);
-                    DailyPlanResponse newPlanDto = aiServiceClient.getDailyPlan(req);
-                    DailyPlan savedPlan = savePlan(newPlanDto, today, userId);
-                    return convertToDto(savedPlan);
+                    if (normGoal.isEmpty()) {
+                        throw new NoTodayPlanException("今日尚无计划。请先到学习大纲确认/生成大纲，或在此填写目标后生成。");
+                    }
+                    log.info("数据库中无 userId={} 今日计划，调 AI 生成", userId);
+                    return generateAndSave(normGoal, userId, outlineId, today);
                 });
     }
 
-    /**
-     * 从已确认大纲中提取章节标题列表，注入计划生成请求。
-     * 若 outlineId 为 null 或大纲不存在，返回空列表，计划生成不受章节约束。
-     */
-    private List<String> resolveChapters(Long outlineId) {
-        if (outlineId == null) return Collections.emptyList();
+    @Transactional
+    public void deleteTodayPlanForUser(String userId) {
+        deleteTodayPlanIfExists(userId, LocalDate.now());
+    }
+
+    private static String normalizeGoal(String goal) {
+        if (goal == null) {
+            return "";
+        }
+        return goal.trim();
+    }
+
+    private boolean requestMatchesStoredPlan(DailyPlan plan, Long requestOutlineId, String normGoal) {
+        if (!Objects.equals(plan.getSourceOutlineId(), requestOutlineId)) {
+            return false;
+        }
+        return normalizeGoal(plan.getSourceGoal()).equals(normGoal);
+    }
+
+    private void deleteTodayPlanIfExists(String userId, LocalDate today) {
+        dailyPlanRepository.findByPlanDateAndUserId(today, userId)
+                .ifPresent(p -> {
+                    log.info("删除当日计划 id={} userId={}", p.getId(), userId);
+                    dailyPlanRepository.delete(p);
+                });
+    }
+
+    private DailyPlanResponse generateAndSave(String normGoal, String userId, Long outlineId, LocalDate today) {
+        List<String> chapters = resolveChapters(outlineId, userId);
+        String goalForAi = normGoal.isEmpty() ? "今日学习" : normGoal;
+        DailyPlanRequest req = new DailyPlanRequest(goalForAi, userId, chapters.isEmpty() ? null : chapters);
+        DailyPlanResponse newPlanDto = aiDailyPlanClient.getDailyPlan(req);
+        DailyPlan saved = savePlan(newPlanDto, today, userId, outlineId, normGoal);
+        return convertToDto(saved);
+    }
+
+    private List<String> resolveChapters(Long outlineId, String userId) {
+        if (outlineId == null) {
+            return Collections.emptyList();
+        }
         return studyOutlineRepository.findById(outlineId)
+                .filter(o -> userId != null && userId.equals(o.getUserId()))
                 .map(StudyOutline::getChapters)
                 .orElse(Collections.emptyList())
                 .stream()
@@ -75,26 +122,13 @@ public class PlanService {
                 .collect(Collectors.toList());
     }
 
-    public DailyPlanResponse getDailyPlanFallback(String goal, String userId, Long outlineId, Throwable t) {
-        log.warn("AI 服务调用失败或超时，启动熔断降级。错误: {}", t.getMessage());
-        DailyPlanResponse fallbackResponse = new DailyPlanResponse();
-        fallbackResponse.setPlanTitle("默认学习计划 (服务降级)");
-
-        TaskDto task = new TaskDto();
-        task.setTaskId(1);
-        task.setDescription("AI 服务当前不可用。请先复习 Java 基础知识，例如集合框架和多线程。");
-        task.setEstimatedTime("2-3 小时");
-        task.setStatus("待开始");
-
-        fallbackResponse.setTasks(Collections.singletonList(task));
-        return fallbackResponse;
-    }
-
-    private DailyPlan savePlan(DailyPlanResponse dto, LocalDate date, String userId) {
+    private DailyPlan savePlan(DailyPlanResponse dto, LocalDate date, String userId, Long sourceOutlineId, String sourceGoal) {
         DailyPlan plan = new DailyPlan();
         plan.setPlanTitle(dto.getPlanTitle());
         plan.setPlanDate(date);
         plan.setUserId(userId);
+        plan.setSourceOutlineId(sourceOutlineId);
+        plan.setSourceGoal(sourceGoal);
 
         List<Task> tasks = dto.getTasks().stream().map(taskDto -> {
             Task task = new Task();
@@ -108,7 +142,7 @@ public class PlanService {
 
         plan.setTasks(tasks);
         DailyPlan saved = dailyPlanRepository.save(plan);
-        log.info("已将 {} 用户 {} 的新计划保存至数据库，id={}。", date, userId, saved.getId());
+        log.info("已保存 {} 用户 {} 新计划 id={} sourceOutlineId={}", date, userId, saved.getId(), sourceOutlineId);
         return saved;
     }
 
@@ -116,6 +150,8 @@ public class PlanService {
         DailyPlanResponse dto = new DailyPlanResponse();
         dto.setId(plan.getId());
         dto.setPlanTitle(plan.getPlanTitle());
+        dto.setSourceOutlineId(plan.getSourceOutlineId());
+        dto.setSourceGoal(plan.getSourceGoal());
         List<TaskDto> taskDtos = plan.getTasks().stream().map(task -> {
             TaskDto taskDto = new TaskDto();
             taskDto.setId(task.getId());
