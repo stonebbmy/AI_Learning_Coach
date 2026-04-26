@@ -1,5 +1,6 @@
 /**
- * 开发环境走 Vite proxy，避免跨域；生产可设 VITE_JAVA_BASE / VITE_AI_BASE。
+ * 开发环境走 Vite `/proxy-java`，避免跨域；生产由构建期 VITE_JAVA_BASE 指定 BFF 根地址。
+ * 所有 API 统一经 Java，不再直连 ai-service。
  */
 import { userStore } from './userStore'
 
@@ -9,13 +10,9 @@ export const javaBase = dev
   ? '/proxy-java'
   : (import.meta.env.VITE_JAVA_BASE as string) || 'http://localhost:8080'
 
-export const aiBase = dev
-  ? '/proxy-ai'
-  : (import.meta.env.VITE_AI_BASE as string) || '/proxy-ai'
-
 /** 获取含 userId 的通用请求头 */
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
-  return {
+  return {  
     'X-User-Id': userStore.state.userId,
     ...extra,
   }
@@ -37,7 +34,7 @@ export async function generateOutline(
   target: string,
   deadline: string
 ): Promise<OutlineGenerateResponse> {
-  const r = await fetch(`${aiBase}/outline/generate`, {
+  const r = await fetch(`${javaBase}/api/outline/generate`, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ target, deadline }),

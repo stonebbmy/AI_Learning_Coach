@@ -65,7 +65,7 @@ def get_qa_chain():
 
     rag_chain = (
         RunnableLambda(_normalize_input)
-        | RunnablePassthrough.assign(
+        | RunnablePassthrough.assign( 
             context=lambda x: _retrieve_and_format(x["question"]),
         )
         | qa_prompt

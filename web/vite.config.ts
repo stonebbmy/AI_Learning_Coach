@@ -17,11 +17,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/proxy-java/, ''),
       },
-      '/proxy-ai': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/proxy-ai/, '/api'),
-      },
     },
   },
 })

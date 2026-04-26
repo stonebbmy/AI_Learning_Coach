@@ -4,8 +4,8 @@
 
 | 页面 | 说明 |
 |------|------|
-| `/outline` | `POST` Python `/api/outline/generate`，确认后 `POST` Java `/api/outline/confirm` |
-| `/knowledge` | `POST` Python `/api/knowledge/upload`（`.md`） |
+| `/outline` | `POST` Java `/api/outline/generate`（BFF 代理 Python），确认后 `POST` `/api/outline/confirm` |
+| `/knowledge` | `POST` Java `/api/knowledge/upload`（代理 Python，`.md`） |
 | `/chat` | `POST` Java `/api/chat`（SSE 流式，经 Java 转发 Python） |
 | `/plan` | `GET` Java `/api/plan/today?goal=...` |
 
@@ -26,7 +26,7 @@ npm install
 npm run dev
 ```
 
-浏览器访问 <http://localhost:5173>。开发模式下通过 Vite 代理访问后端（见 `vite.config.ts` 中 `/proxy-java`、`/proxy-ai`），无需额外配置跨域。
+浏览器访问 <http://localhost:5173>。开发模式下通过 Vite 将 `/proxy-java` 转到 Java `:8080`（见 `vite.config.ts`），前端 API 只认 BFF，不直连 `ai-service`。
 
 ## 生产构建 / 直连后端
 
@@ -36,7 +36,4 @@ npm run build
 
 构建产物在 `web/dist`。若静态资源与后端不同源，可设置环境变量并自行部署 Nginx 等：
 
-- `VITE_JAVA_BASE`：例如 `http://localhost:8080`
-- `VITE_AI_BASE`：例如 `http://localhost:8000/api`
-
-（已在 `ai-service` 与 `java-app` 中开启 CORS，便于浏览器直连。）
+- `VITE_JAVA_BASE`：BFF 根地址，例如 `http://localhost:8080`；与 Docker 内 Nginx 的 `/proxy-java/` 前缀配合时，构建为 `VITE_JAVA_BASE=/proxy-java` 即可（见 `Dockerfile`）。

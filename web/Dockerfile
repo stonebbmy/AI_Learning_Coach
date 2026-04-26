@@ -23,10 +23,8 @@ RUN npm ci --no-audit --no-fund --registry=https://registry.npmmirror.com
 # 复制源码并构建
 COPY . .
 
-# 生产构建：将代理路径写入环境变量，nginx 负责把这些路径转发给后端服务
-# DEV=false 时 api.ts 读取 VITE_* 变量；/proxy-java 和 /proxy-ai 由 nginx 代理
+# 生产构建：浏览器经 /proxy-* 与 nginx 同路径访问 Java BFF（与 api.javaBase 一致）
 ENV VITE_JAVA_BASE=/proxy-java
-ENV VITE_AI_BASE=/proxy-ai
 
 # 用本地 vite 二进制，避免 npx 再连 registry；并清除可能写入 /root/.npmrc 的 proxy
 RUN npm config delete proxy 2>/dev/null || true; npm config delete https-proxy 2>/dev/null || true; \

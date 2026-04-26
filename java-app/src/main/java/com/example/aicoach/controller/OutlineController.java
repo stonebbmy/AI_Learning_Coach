@@ -2,6 +2,8 @@
 package com.example.aicoach.controller;
 
 import com.example.aicoach.dto.OutlineConfirmationRequest;
+import com.example.aicoach.dto.OutlineGenerateAiResponse;
+import com.example.aicoach.dto.OutlineGenerateRequestDto;
 import com.example.aicoach.dto.StudyChapterDto;
 import com.example.aicoach.entity.StudyChapter;
 import com.example.aicoach.entity.StudyOutline;
@@ -10,22 +12,46 @@ import com.example.aicoach.repository.StudyOutlineRepository;
 import com.example.aicoach.service.OutlineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/outline")
-@RequiredArgsConstructor
 @Tag(name = "2. Study Outline", description = "学习大纲管理")
 public class OutlineController {
 
     private final StudyOutlineRepository outlineRepository;
     private final OutlineService outlineService;
+    private final WebClient aiServiceWebClient;
+
+    public OutlineController(StudyOutlineRepository outlineRepository,
+                             OutlineService outlineService,
+                             @Value("${ai-service.url}") String aiServiceUrl) {
+        this.outlineRepository = outlineRepository;
+        this.outlineService = outlineService;
+        this.aiServiceWebClient = WebClient.builder().baseUrl(aiServiceUrl).build();
+    }
+
+    @PostMapping(value = "/generate", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "AI 生成学习大纲（经 BFF 代理至 ai-service）",
+               description = "转发至 Python /api/outline/generate，与知识库/聊天等接口一致统一走 Java 入口。")
+    public Mono<ResponseEntity<OutlineGenerateAiResponse>> generateOutline(@RequestBody OutlineGenerateRequestDto request) {
+        return aiServiceWebClient.post()
+                .uri("/outline/generate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .toEntity(OutlineGenerateAiResponse.class)
+                .map(entity -> ResponseEntity.status(entity.getStatusCode()).body(entity.getBody()));
+    }
 
     @PostMapping("/confirm")
     @Transactional
