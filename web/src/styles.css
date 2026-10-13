@@ -132,6 +132,13 @@ code {
   overflow: hidden;
 }
 
+/* 监控 / RAG 评估：加宽主栏，便于多列仪表盘 */
+.main--dashboard {
+  max-width: min(1360px, 100%);
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
 /* Prometheus / Grafana 等全宽 iframe 嵌入 */
 .main--embed {
   max-width: 100%;

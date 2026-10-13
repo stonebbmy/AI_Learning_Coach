@@ -1,0 +1,36 @@
+---
+description: AI Learning Coach 项目全局上下文，帮助 Agent 理解 monorepo 结构
+alwaysApply: true
+---
+
+# AI Learning Coach — 项目概览
+
+本仓库是 **AI 学习教练** monorepo，开发前先确认你在改哪一层。
+
+## 目录结构
+
+| 目录 | 技术栈 | 职责 |
+|------|--------|------|
+| `ai-service/` | Python / FastAPI / LangGraph | RAG、Agent、MCP、大纲/计划生成 |
+| `java-app/` | Spring Boot | BFF 网关、用户上下文、Feign 调 ai-service |
+| `web/` | Vue 3 + Vite + TypeScript | 前端 UI |
+| `docs/` | Markdown | 架构文档（优先读 `docs/ARCHITECTURE.md`） |
+| `.cursor/` | Cursor 配置 | Rules、Skills、MCP（学习示例） |
+
+## 服务端口（docker-compose 默认）
+
+- ai-service: `8000`
+- java-app: `8080`
+- web dev: `5173`
+- ChromaDB: `8001`
+- Redis: `6379`
+
+## 跨层改动原则
+
+- 改 API 契约：先查 `ai-service/app/api/` 和 `java-app` 的 Feign Client
+- 改 AI 行为：优先看 `ai-service/app/agents/`、`app/graphs/`、`app/prompts/`
+- 不要在前端硬编码 ai-service 地址，走 java-app 代理或环境变量
+
+## 回复语言
+
+与用户沟通时使用 **中文**。

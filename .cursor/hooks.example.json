@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "comment": "示例：编辑 ai-service Python 文件后自动 format（需本地安装 ruff）",
+        "command": "echo hook-example: afterFileEdit triggered"
+      }
+    ]
+  }
+}

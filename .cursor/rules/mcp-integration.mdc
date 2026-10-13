@@ -1,0 +1,39 @@
+---
+description: MCP 工具开发与 Cursor IDE MCP 集成的项目约定
+globs: ai-service/app/tools/mcp_adapter.py,ai-service/app/mcp_servers/**,.cursor/mcp*.json,.cursor/mcp-servers/**
+alwaysApply: false
+---
+
+# MCP 集成规范
+
+本项目有两套 MCP 概念，不要混淆：
+
+| 类型 | 位置 | 用途 |
+|------|------|------|
+| **应用内 MCP** | `ai-service/app/mcp_servers/` | LangGraph Agent 运行时调用（stdio 子进程） |
+| **Cursor IDE MCP** | `.cursor/mcp.json` | 给 Cursor Agent 用的外部工具 |
+
+## 应用内 MCP（ai-service）
+
+### 文件职责
+
+- `app/mcp_servers/*_server.py` — FastMCP 服务端，定义 `@mcp.tool()`
+- `app/tools/mcp_adapter.py` — 客户端适配层，暴露 LangChain Tool 或 `web_research()` 辅助函数
+
+### 新增工具 checklist
+
+- [ ] 在 server 用 `@mcp.tool()` 定义，保持输入输出契约稳定
+- [ ] 在 `mcp_adapter.py` 的 `_call_mcp_tool` 或 `get_mcp_tools()` 中注册
+- [ ] `web_fetch` 类工具必须走 `_is_allowed_url()` 域名白名单
+- [ ] 限制 `max_results` / `max_chars` 上限，防止 token 爆炸
+
+### 命名
+
+- MCP tool 名：`snake_case`（如 `web_search`）
+- LangChain Tool 名：前缀 `mcp_`（如 `mcp_web_search`）
+
+## Cursor IDE MCP
+
+- 配置文件：`.cursor/mcp.json`（可提交 Git，**密钥用 `${env:VAR}`**）
+- 示例 server：`.cursor/mcp-servers/aicoach_helper/`
+- 在 Cursor 侧栏 **Customize → MCP** 开关 server，排错看 **Output → MCP Logs**

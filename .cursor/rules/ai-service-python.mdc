@@ -1,0 +1,55 @@
+---
+description: ai-service Python 编码规范（FastAPI、Agent、RAG）
+globs: ai-service/**/*.py
+alwaysApply: false
+---
+
+# ai-service Python 规范
+
+## 配置与环境变量
+
+- 所有配置从 `app/core/config.py` 的 `Settings` 读取，**禁止硬编码 API Key**
+- 新增 env 变量时同步更新项目根目录 `.env.example`
+
+## 异步与工具
+
+- MCP / HTTP 调用使用 `async def`；LangChain Tool 的 sync `func` 仅作占位
+- 工具返回值优先 JSON 字符串或结构化 dict，便于 Agent 解析
+
+## 日志与追踪
+
+- 使用 `get_request_id()` 注入 request id，格式：`[rid={rid}] ...`
+- 不打印 API Key、完整用户输入等敏感信息
+
+## 错误处理
+
+```python
+# ❌ 吞掉异常
+try:
+    await _call_mcp_tool(...)
+except Exception:
+    return ""
+
+# ✅ 记录并返回可诊断信息
+try:
+    await _call_mcp_tool(...)
+except Exception as e:
+    print(f"[rid={rid}] MCP failed: {tool_name} err={e!r}")
+    raise
+```
+
+## 新增 API 路由
+
+1. 在 `app/api/` 新建或扩展 router
+2. 在 `main.py` 注册
+3. 输入输出用 Pydantic schema（`app/models/`）
+4. 需要限流/鉴权时走现有 middleware，不重复实现
+
+## 测试与验证
+
+改完运行（在 `ai-service/` 目录）：
+
+```bash
+python -m pytest  # 若有测试
+python scripts/eval_smoke.py  # RAG 冒烟
+```

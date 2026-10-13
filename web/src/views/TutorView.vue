@@ -367,8 +367,8 @@ function renderMarkdown(text: string): string {
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       // 行内代码
       .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-      // 无序列表项
-      .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
+      // 列表行（用 div，避免 <li> 默认圆点且 invalid 嵌在 span 内）
+      .replace(/^[-*]\s+(.+)$/gm, '<div class="bubble-md-line">$1</div>')
       // 换行
       .replace(/\n/g, '<br>')
   )
@@ -1181,23 +1181,23 @@ function renderMarkdown(text: string): string {
 .bubble.streaming {
   border-color: #5b72e8;
 }
-/* Markdown 渲染后的元素样式 */
-.bubble h1, .bubble h2, .bubble h3 {
+/* Markdown 经 v-html 注入，须 :deep 才能命中子节点 */
+.bubble :deep(h1),
+.bubble :deep(h2),
+.bubble :deep(h3) {
   font-weight: 700;
   margin: 0.6em 0 0.2em;
   color: var(--text, #e0e6f7);
 }
-.bubble h1 { font-size: 1.15em; }
-.bubble h2 { font-size: 1.08em; }
-.bubble h3 { font-size: 1.0em; }
-.bubble li {
-  margin-left: 1.4em;
-  display: list-item;
-  list-style-type: disc;
+.bubble :deep(h1) { font-size: 1.15em; }
+.bubble :deep(h2) { font-size: 1.08em; }
+.bubble :deep(h3) { font-size: 1.0em; }
+.bubble :deep(.bubble-md-line) {
+  margin: 0.2em 0;
 }
-.bubble strong { font-weight: 700; }
-.bubble em { font-style: italic; }
-.bubble code {
+.bubble :deep(strong) { font-weight: 700; }
+.bubble :deep(em) { font-style: italic; }
+.bubble :deep(code) {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
   padding: 0 4px;

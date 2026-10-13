@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "aicoach-helper": {
+      "command": "python",
+      "args": [".cursor/mcp-servers/aicoach_helper/server.py"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/ai-service"
+      }
+    }
+  }
+}

@@ -12,6 +12,10 @@ const isEmbedRoute = computed(() =>
   ['prometheus', 'grafana'].includes(String(route.name)),
 )
 
+const isDashboardWide = computed(() =>
+  ['metrics', 'eval'].includes(String(route.name)),
+)
+
 /** 普通页 main 整列滚动，私教/学习模块由内部分区滚动，嵌入页由 iframe 内滚动 */
 const mainScrollY = computed(
   () => route.name !== 'tutor' && !isLearningModule.value && !isEmbedRoute.value,
@@ -48,6 +52,7 @@ const mainScrollY = computed(
         'main--tutor': route.name === 'tutor',
         'main--learning': isLearningModule,
         'main--embed': isEmbedRoute,
+        'main--dashboard': isDashboardWide,
         'scroll-y': mainScrollY,
       }"
     >
