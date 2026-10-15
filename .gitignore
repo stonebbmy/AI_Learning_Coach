@@ -68,9 +68,10 @@ docker-compose.override.yml
 docker-compose.*.local.yml
 
 # -----------------------------------------------------------------------------
-# Local-only docs (resumes, private interview notes)
+# Local-only docs (resumes, private notes)
 # -----------------------------------------------------------------------------
 docs/file/
+docs/INTERVIEW_QA.md
 
 # -----------------------------------------------------------------------------
 # Scratch / local experiments
